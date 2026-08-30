@@ -1,0 +1,340 @@
+@import "tailwindcss";
+
+/*
+ * Phosphor presentation adapter
+ *
+ * Components consume the stable Tailwind-facing aliases below. Each treatment
+ * overrides only the --ph-* semantic tokens, so geometry and instrument state
+ * remain independent from rendering.
+ */
+@theme inline {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-bg: var(--ph-field);
+  --color-plot: var(--ph-plot);
+  --color-surface: var(--ph-surface);
+  --color-surface-2: var(--ph-surface-raised);
+  --color-fg: var(--ph-text);
+  --color-muted: var(--ph-text-muted);
+  --color-faint: var(--ph-text-faint);
+  --color-border: var(--ph-border);
+  --color-border-strong: var(--ph-border-strong);
+  --color-active: var(--ph-active);
+  --color-active-ink: var(--ph-active-ink);
+  --color-active-soft: var(--ph-active-soft);
+  --color-trace: var(--ph-trace-primary);
+  --color-trace-secondary: var(--ph-trace-secondary);
+  --color-status: var(--ph-status);
+  --color-focus: var(--ph-focus);
+  --color-key-white: var(--ph-key-white);
+  --color-key-ink: var(--ph-key-ink);
+  --color-key-black: var(--ph-key-black);
+  --color-key-black-ink: var(--ph-key-black-ink);
+  --color-key-white-active: var(--ph-key-white-active);
+  --color-key-white-active-ink: var(--ph-key-white-active-ink);
+  --color-key-black-active: var(--ph-key-black-active);
+  --color-key-black-active-ink: var(--ph-key-black-active-ink);
+
+  /* Compatibility aliases keep the treatment layer easy to transplant. */
+  --color-phosphor: var(--ph-active);
+  --color-phosphor-dim: var(--ph-key-black-active);
+  --color-phosphor-deep: var(--ph-active-soft);
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  --shadow-border: var(--ph-shadow-border);
+  --shadow-border-hover: var(--ph-shadow-border-hover);
+}
+
+:root,
+[data-phosphor-treatment="phosphor"] {
+  color-scheme: dark;
+
+  --ph-field: #070b09;
+  --ph-plot: #050906;
+  --ph-surface: #101613;
+  --ph-surface-raised: #151d19;
+  --ph-text: #e7f3eb;
+  --ph-text-muted: #8da397;
+  --ph-text-faint: #6b8274;
+  --ph-border: #1d2923;
+  --ph-border-strong: #2c4035;
+  --ph-active: #91efbf;
+  --ph-active-ink: #07100b;
+  --ph-active-soft: #173226;
+  --ph-trace-primary: #8ef5c0;
+  --ph-trace-secondary: #4b8d6e;
+  --ph-status: #78dca8;
+  --ph-focus: #a7f7cd;
+  --ph-key-white: #d7e5dc;
+  --ph-key-ink: #101614;
+  --ph-key-black: #0b110e;
+  --ph-key-black-ink: #8fa297;
+  --ph-key-white-active: #8ef5c0;
+  --ph-key-white-active-ink: #07100b;
+  --ph-key-black-active: #326f53;
+  --ph-key-black-active-ink: #a8f7cf;
+  --ph-shadow-border: 0 0 0 1px rgb(232 246 238 / 0.08);
+  --ph-shadow-border-hover: 0 0 0 1px rgb(142 245 192 / 0.3);
+
+  --ph-title-font: var(--font-sans);
+  --ph-title-tracking: -0.025em;
+  --ph-title-transform: none;
+  --ph-title-weight: 500;
+
+  --ph-canvas-plot: #050906;
+  --ph-canvas-grid-minor: #0f1813;
+  --ph-canvas-grid-major: #17251d;
+  --ph-canvas-axis: #2b684c;
+  --ph-canvas-annotation: #6b8274;
+  --ph-canvas-trace-primary: #8ef5c0;
+  --ph-canvas-trace-secondary: #4b8d6e;
+  --ph-canvas-trace-ghost: #4c9f78;
+  --ph-canvas-space-fill: #8ef5c0;
+  --ph-canvas-scope-trace: #74cfa0;
+  --ph-canvas-scope-idle: #2f6f52;
+  --ph-canvas-scope-fade: rgba(5, 9, 6, 0.34);
+  --ph-canvas-trace-width: 2;
+  --ph-canvas-trace-glow: 8;
+  --ph-canvas-ghost-width: 1.35;
+  --ph-canvas-ghost-alpha: 0.24;
+  --ph-canvas-space-fill-alpha: 0.07;
+  --ph-canvas-microstructure-alpha: 0.34;
+  --ph-canvas-scope-width: 1.6;
+  --ph-canvas-scope-glow: 8;
+}
+
+[data-phosphor-treatment="registration-ink"] {
+  color-scheme: light;
+
+  --ph-field: #ded9ce;
+  --ph-plot: #f4f0e7;
+  --ph-surface: #ebe6dc;
+  --ph-surface-raised: #e2ddd2;
+  --ph-text: #1d1e1b;
+  --ph-text-muted: #4f514d;
+  --ph-text-faint: #5d5f5a;
+  --ph-border: #cbc5ba;
+  --ph-border-strong: #aaa59b;
+  --ph-active: #252622;
+  --ph-active-ink: #f8f4eb;
+  --ph-active-soft: #d8d3c9;
+  --ph-trace-primary: #181916;
+  --ph-trace-secondary: #777970;
+  --ph-status: #a24e42;
+  --ph-focus: #a24e42;
+  --ph-key-white: #f7f3e9;
+  --ph-key-ink: #20211e;
+  --ph-key-black: #232420;
+  --ph-key-black-ink: #d7d3ca;
+  --ph-key-white-active: #252622;
+  --ph-key-white-active-ink: #f8f4eb;
+  --ph-key-black-active: #9f4f43;
+  --ph-key-black-active-ink: #fff9ef;
+  --ph-shadow-border:
+    0 0 0 1px rgb(33 34 30 / 0.16),
+    0 1px 2px -1px rgb(33 34 30 / 0.1);
+  --ph-shadow-border-hover:
+    0 0 0 1px rgb(33 34 30 / 0.28),
+    0 1px 2px -1px rgb(33 34 30 / 0.14);
+
+  --ph-title-font: var(--font-mono);
+  --ph-title-tracking: 0.06em;
+  --ph-title-transform: uppercase;
+  --ph-title-weight: 500;
+
+  --ph-canvas-plot: #f4f0e7;
+  --ph-canvas-grid-minor: #e0dbd1;
+  --ph-canvas-grid-major: #c9c3b8;
+  --ph-canvas-axis: #77766f;
+  --ph-canvas-annotation: #676861;
+  --ph-canvas-trace-primary: #171815;
+  --ph-canvas-trace-secondary: #787a73;
+  --ph-canvas-trace-ghost: #8a8c84;
+  --ph-canvas-space-fill: #363833;
+  --ph-canvas-scope-trace: #3f403c;
+  --ph-canvas-scope-idle: #88877f;
+  --ph-canvas-scope-fade: rgba(244, 240, 231, 0.82);
+  --ph-canvas-trace-width: 1.45;
+  --ph-canvas-trace-glow: 0;
+  --ph-canvas-ghost-width: 1;
+  --ph-canvas-ghost-alpha: 0.35;
+  --ph-canvas-space-fill-alpha: 0.045;
+  --ph-canvas-microstructure-alpha: 0.52;
+  --ph-canvas-scope-width: 1.25;
+  --ph-canvas-scope-glow: 0;
+}
+
+[data-phosphor-treatment="deep-observatory"] {
+  color-scheme: dark;
+
+  --ph-field: #020507;
+  --ph-plot: #03080b;
+  --ph-surface: #081014;
+  --ph-surface-raised: #0c1519;
+  --ph-text: #dce6e9;
+  --ph-text-muted: #85989f;
+  --ph-text-faint: #657c84;
+  --ph-border: #13242a;
+  --ph-border-strong: #203941;
+  --ph-active: #aedce4;
+  --ph-active-ink: #041013;
+  --ph-active-soft: #10282f;
+  --ph-trace-primary: #bcecf2;
+  --ph-trace-secondary: #668e98;
+  --ph-status: #9bd4de;
+  --ph-focus: #c6edf2;
+  --ph-key-white: #d4dde0;
+  --ph-key-ink: #091114;
+  --ph-key-black: #050a0c;
+  --ph-key-black-ink: #819197;
+  --ph-key-white-active: #aedce4;
+  --ph-key-white-active-ink: #041013;
+  --ph-key-black-active: #365e68;
+  --ph-key-black-active-ink: #c9eef3;
+  --ph-shadow-border: 0 0 0 1px rgb(188 236 242 / 0.08);
+  --ph-shadow-border-hover: 0 0 0 1px rgb(188 236 242 / 0.22);
+
+  --ph-title-font: var(--font-sans);
+  --ph-title-tracking: -0.02em;
+  --ph-title-transform: none;
+  --ph-title-weight: 500;
+
+  --ph-canvas-plot: #03080b;
+  --ph-canvas-grid-minor: #081318;
+  --ph-canvas-grid-major: #10242b;
+  --ph-canvas-axis: #24434c;
+  --ph-canvas-annotation: #657c84;
+  --ph-canvas-trace-primary: #bcecf2;
+  --ph-canvas-trace-secondary: #668e98;
+  --ph-canvas-trace-ghost: #496d77;
+  --ph-canvas-space-fill: #9bc9d2;
+  --ph-canvas-scope-trace: #82b6c0;
+  --ph-canvas-scope-idle: #365e68;
+  --ph-canvas-scope-fade: rgba(3, 8, 11, 0.3);
+  --ph-canvas-trace-width: 1.7;
+  --ph-canvas-trace-glow: 4;
+  --ph-canvas-ghost-width: 1.15;
+  --ph-canvas-ghost-alpha: 0.2;
+  --ph-canvas-space-fill-alpha: 0.055;
+  --ph-canvas-microstructure-alpha: 0.42;
+  --ph-canvas-scope-width: 1.35;
+  --ph-canvas-scope-glow: 3;
+}
+
+[data-phosphor-treatment="ultraviolet-laboratory"] {
+  color-scheme: dark;
+
+  --ph-field: #080711;
+  --ph-plot: #0b0915;
+  --ph-surface: #12101e;
+  --ph-surface-raised: #191528;
+  --ph-text: #eeeafd;
+  --ph-text-muted: #aba5c3;
+  --ph-text-faint: #7d7696;
+  --ph-border: #28213c;
+  --ph-border-strong: #40345d;
+  --ph-active: #b9a9ff;
+  --ph-active-ink: #120e22;
+  --ph-active-soft: #2e254a;
+  --ph-trace-primary: #e1dcff;
+  --ph-trace-secondary: #8d78d0;
+  --ph-status: #cabdff;
+  --ph-focus: #d8d0ff;
+  --ph-key-white: #dcd7ea;
+  --ph-key-ink: #171222;
+  --ph-key-black: #090712;
+  --ph-key-black-ink: #928ba7;
+  --ph-key-white-active: #b9a9ff;
+  --ph-key-white-active-ink: #120e22;
+  --ph-key-black-active: #6552a7;
+  --ph-key-black-active-ink: #eeeafd;
+  --ph-shadow-border: 0 0 0 1px rgb(225 220 255 / 0.09);
+  --ph-shadow-border-hover: 0 0 0 1px rgb(185 169 255 / 0.28);
+
+  --ph-title-font: var(--font-sans);
+  --ph-title-tracking: -0.015em;
+  --ph-title-transform: none;
+  --ph-title-weight: 500;
+
+  --ph-canvas-plot: #0b0915;
+  --ph-canvas-grid-minor: #171228;
+  --ph-canvas-grid-major: #251c3d;
+  --ph-canvas-axis: #4c3b70;
+  --ph-canvas-annotation: #7d7696;
+  --ph-canvas-trace-primary: #e1dcff;
+  --ph-canvas-trace-secondary: #8d78d0;
+  --ph-canvas-trace-ghost: #6855a4;
+  --ph-canvas-space-fill: #ae9aff;
+  --ph-canvas-scope-trace: #a697dc;
+  --ph-canvas-scope-idle: #5a4a85;
+  --ph-canvas-scope-fade: rgba(11, 9, 21, 0.3);
+  --ph-canvas-trace-width: 1.8;
+  --ph-canvas-trace-glow: 6;
+  --ph-canvas-ghost-width: 1.2;
+  --ph-canvas-ghost-alpha: 0.22;
+  --ph-canvas-space-fill-alpha: 0.065;
+  --ph-canvas-microstructure-alpha: 0.45;
+  --ph-canvas-scope-width: 1.45;
+  --ph-canvas-scope-glow: 5;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--ph-field);
+    color: var(--ph-text);
+  }
+
+  html,
+  body,
+  #app {
+    min-height: 100dvh;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--ph-field);
+    color: var(--ph-text);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  select option {
+    background: var(--ph-surface);
+    color: var(--ph-text);
+  }
+}
+
+@layer components {
+  .phosphor-wordmark {
+    font-family: var(--ph-title-font);
+    font-weight: var(--ph-title-weight);
+    letter-spacing: var(--ph-title-tracking);
+    text-transform: var(--ph-title-transform);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
