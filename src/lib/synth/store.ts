@@ -19,10 +19,17 @@ import {
   generateSpaceContour,
   type SpacePreset,
 } from "./space";
+import {
+  cloneMotionPath,
+  complementMotionPath,
+  createDefaultMotionPath,
+  motionPathsDiffer,
+  sampleMotionPath,
+} from "./motion";
 
 export type { WavePreset, SpacePreset };
 
-export type EditorDomain = "cycle" | "space";
+export type EditorDomain = "cycle" | "motion" | "space";
 
 const HISTORY_LIMIT = 32;
 const INITIAL_SPACE_MIX = 0.38;
@@ -50,6 +57,12 @@ type SynthState = {
   slotB: number[] | null;
   morph: number;
   morphLive: boolean;
+  motionPath: number[];
+  motionPlaying: boolean;
+  motionProgress: number;
+  motionRunId: number;
+  motionPast: number[][];
+  motionFuture: number[][];
   past: number[][];
   future: number[][];
   spaceContour: number[];
@@ -80,6 +93,17 @@ type SynthActions = {
   captureB: () => void;
   swapSlots: () => void;
   setMorph: (t: number, immediate?: boolean) => void;
+  auditionMotion: (t: number, immediate?: boolean) => void;
+  setLiveMotionPath: (path: number[]) => void;
+  finishMotionGesture: (before: number[], after: number[]) => void;
+  playMotion: () => void;
+  stopMotion: () => void;
+  setMotionPlaybackPosition: (
+    t: number,
+    progress: number,
+    complete: boolean,
+    runId: number,
+  ) => void;
   undo: () => void;
   redo: () => void;
   setLiveContour: (contour: number[]) => void;
@@ -96,11 +120,18 @@ type SynthActions = {
 };
 
 const initialSamples = generatePreset("sine");
+const initialMotionPath = createDefaultMotionPath();
 const initialContour = generateSpaceContour("room");
 const initialSeed = INITIAL_SPACE_SEED;
 
 function pushPast(past: number[][], snapshot: number[]): number[][] {
   const next = [...past, cloneWave(snapshot)];
+  if (next.length > HISTORY_LIMIT) next.splice(0, next.length - HISTORY_LIMIT);
+  return next;
+}
+
+function pushMotionPast(past: number[][], snapshot: number[]): number[][] {
+  const next = [...past, cloneMotionPath(snapshot)];
   if (next.length > HISTORY_LIMIT) next.splice(0, next.length - HISTORY_LIMIT);
   return next;
 }
@@ -130,7 +161,36 @@ function applySpace(contour: number[], seed: number, metal: boolean) {
   synth.setSpace(contour, seed, metal);
 }
 
-export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
+export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
+  type MorphSource = "manual" | "motion-drawing" | "motion-playback";
+
+  const applyMorphPosition = (
+    t: number,
+    source: MorphSource,
+    immediate = false,
+    motionState: Partial<SynthState> = {},
+  ) => {
+    const { slotA, slotB, morphLive, samples: prev } = get();
+    if (!slotA || !slotB) return false;
+    const u = Math.min(1, Math.max(0, t));
+    const samples = morphSamples(slotA, slotB, u);
+    const recordCycleHistory = source === "manual";
+    const reengage = recordCycleHistory && !morphLive && wavesDiffer(prev, samples);
+    set({
+      morph: u,
+      samples,
+      preset: "custom",
+      hasDrawn: true,
+      morphLive: true,
+      ...(source !== "motion-playback" ? { motionPlaying: false } : {}),
+      ...(reengage ? { past: pushPast(get().past, prev), future: [] } : {}),
+      ...motionState,
+    });
+    synth.setWaveform(samples, immediate);
+    return true;
+  };
+
+  return {
   domain: "cycle",
   samples: initialSamples,
   preset: "sine",
@@ -146,6 +206,12 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   slotB: null,
   morph: 0,
   morphLive: false,
+  motionPath: initialMotionPath,
+  motionPlaying: false,
+  motionProgress: 0,
+  motionRunId: 0,
+  motionPast: [],
+  motionFuture: [],
   past: [],
   future: [],
   spaceContour: initialContour,
@@ -164,14 +230,14 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   },
 
   setLiveSamples: (samples, immediate = false) => {
-    set({ samples, preset: "custom", morphLive: false });
+    set({ samples, preset: "custom", morphLive: false, motionPlaying: false });
     synth.setWaveform(samples, immediate);
   },
 
   commitSamples: (samples, preset = "custom") => {
     const prev = get().samples;
     if (!wavesDiffer(prev, samples)) {
-      set({ samples, preset, hasDrawn: true, morphLive: false });
+      set({ samples, preset, hasDrawn: true, morphLive: false, motionPlaying: false });
       synth.setWaveform(samples, true);
       return;
     }
@@ -180,6 +246,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       preset,
       hasDrawn: true,
       morphLive: false,
+      motionPlaying: false,
       past: pushPast(get().past, prev),
       future: [],
     });
@@ -193,6 +260,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       preset: "custom",
       hasDrawn: true,
       morphLive: false,
+      motionPlaying: false,
       ...(changed ? { past: pushPast(get().past, before), future: [] } : {}),
     });
     synth.setWaveform(after, true);
@@ -222,35 +290,79 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
 
   captureA: () => {
     const samples = cloneWave(get().samples);
-    set({ slotA: samples, morph: 0, hasDrawn: true, morphLive: Boolean(get().slotB) });
+    set({
+      slotA: samples,
+      morph: 0,
+      hasDrawn: true,
+      morphLive: Boolean(get().slotB),
+      motionPlaying: false,
+    });
   },
   captureB: () => {
     const samples = cloneWave(get().samples);
-    set({ slotB: samples, morph: 1, hasDrawn: true, morphLive: Boolean(get().slotA) });
+    set({
+      slotB: samples,
+      morph: 1,
+      hasDrawn: true,
+      morphLive: Boolean(get().slotA),
+      motionPlaying: false,
+    });
   },
   swapSlots: () => {
-    const { slotA, slotB, morph } = get();
+    const { slotA, slotB, morph, motionPath, motionPast, motionFuture } = get();
     set({
       slotA: slotB ? cloneWave(slotB) : null,
       slotB: slotA ? cloneWave(slotA) : null,
       morph: 1 - morph,
+      motionPath: complementMotionPath(motionPath),
+      motionPast: motionPast.map(complementMotionPath),
+      motionFuture: motionFuture.map(complementMotionPath),
+      motionPlaying: false,
     });
   },
   setMorph: (t, immediate = false) => {
-    const { slotA, slotB, morphLive, samples: prev } = get();
-    if (!slotA || !slotB) return;
-    const u = Math.min(1, Math.max(0, t));
-    const samples = morphSamples(slotA, slotB, u);
-    const reengage = !morphLive && wavesDiffer(prev, samples);
+    applyMorphPosition(t, "manual", immediate);
+  },
+
+  auditionMotion: (t, immediate = false) => {
+    applyMorphPosition(t, "motion-drawing", immediate);
+  },
+
+  setLiveMotionPath: (path) => {
+    set({ motionPath: path });
+  },
+
+  finishMotionGesture: (before, after) => {
+    const changed = motionPathsDiffer(before, after);
     set({
-      morph: u,
-      samples,
-      preset: "custom",
-      hasDrawn: true,
-      morphLive: true,
-      ...(reengage ? { past: pushPast(get().past, prev), future: [] } : {}),
+      motionPath: after,
+      ...(changed
+        ? { motionPast: pushMotionPast(get().motionPast, before), motionFuture: [] }
+        : {}),
     });
-    synth.setWaveform(samples, immediate);
+  },
+
+  playMotion: () => {
+    const { slotA, slotB, motionPath, motionRunId } = get();
+    if (!slotA || !slotB) return;
+    synth.unlock();
+    const nextRunId = motionRunId + 1;
+    applyMorphPosition(sampleMotionPath(motionPath, 0), "motion-playback", true, {
+      motionPlaying: true,
+      motionProgress: 0,
+      motionRunId: nextRunId,
+    });
+  },
+
+  stopMotion: () => set({ motionPlaying: false }),
+
+  setMotionPlaybackPosition: (t, progress, complete, runId) => {
+    const state = get();
+    if (!state.motionPlaying || state.motionRunId !== runId) return;
+    applyMorphPosition(t, "motion-playback", complete, {
+      motionProgress: Math.min(1, Math.max(0, progress)),
+      ...(complete ? { motionPlaying: false } : {}),
+    });
   },
 
   setLiveContour: (contour) => {
@@ -340,6 +452,21 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   },
 
   undo: () => {
+    if (get().domain === "motion") {
+      const { motionPast, motionPath, motionFuture } = get();
+      const prev = motionPast[motionPast.length - 1];
+      if (!prev) {
+        set({ motionPlaying: false });
+        return;
+      }
+      set({
+        motionPath: cloneMotionPath(prev),
+        motionPast: motionPast.slice(0, -1),
+        motionFuture: [...motionFuture, cloneMotionPath(motionPath)],
+        motionPlaying: false,
+      });
+      return;
+    }
     if (get().domain === "space") {
       const {
         spacePast,
@@ -378,12 +505,28 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       samples: cloneWave(prev),
       preset: "custom",
       morphLive: false,
+      motionPlaying: false,
       past: past.slice(0, -1),
       future: [...future, cloneWave(samples)],
     });
     synth.setWaveform(prev, true);
   },
   redo: () => {
+    if (get().domain === "motion") {
+      const { motionFuture, motionPath, motionPast } = get();
+      const next = motionFuture[motionFuture.length - 1];
+      if (!next) {
+        set({ motionPlaying: false });
+        return;
+      }
+      set({
+        motionPath: cloneMotionPath(next),
+        motionFuture: motionFuture.slice(0, -1),
+        motionPast: pushMotionPast(motionPast, motionPath),
+        motionPlaying: false,
+      });
+      return;
+    }
     if (get().domain === "space") {
       const {
         spaceFuture,
@@ -419,6 +562,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       samples: cloneWave(next),
       preset: "custom",
       morphLive: false,
+      motionPlaying: false,
       future: future.slice(0, -1),
       past: pushPast(past, samples),
     });
@@ -438,7 +582,8 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   setAudioReady: (ready) => set({ audioReady: ready }),
   markDrawn: () => set({ hasDrawn: true }),
   markSpaceDrawn: () => set({ spaceHasDrawn: true }),
-}));
+  };
+});
 
 synth.setWaveform(cloneWave(initialSamples), true);
 synth.setSpace(cloneContour(initialContour), initialSeed, false);

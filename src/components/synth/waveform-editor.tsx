@@ -14,6 +14,7 @@ import {
 } from "@/lib/synth/space";
 import { synth } from "@/lib/synth/engine";
 import { cn } from "@/lib/utils";
+import { EditorTabs } from "./editor-tabs";
 
 const PAD_X = 44;
 const PAD_Y = 40;
@@ -77,7 +78,6 @@ export function WaveformEditor() {
   const spaceHasDrawn = useSynthStore((s) => s.spaceHasDrawn);
   const morphLive = useSynthStore((s) => s.morphLive);
   const morphArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
-  const setDomain = useSynthStore((s) => s.setDomain);
   const setLiveSamples = useSynthStore((s) => s.setLiveSamples);
   const finishGesture = useSynthStore((s) => s.finishGesture);
   const setLiveContour = useSynthStore((s) => s.setLiveContour);
@@ -419,30 +419,7 @@ export function WaveformEditor() {
     <div className="relative flex min-h-32 flex-1 flex-col overflow-hidden rounded-xl bg-plot shadow-border md:min-h-0">
       <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="pointer-events-auto flex rounded-md bg-surface-2 p-0.5 shadow-border">
-            <button
-              type="button"
-              className={cn(
-                "h-7 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
-                !space ? "bg-active text-active-ink" : "text-faint hover:text-fg",
-              )}
-              aria-pressed={!space}
-              onClick={() => setDomain("cycle")}
-            >
-              Cycle
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "h-7 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
-                space ? "bg-active text-active-ink" : "text-faint hover:text-fg",
-              )}
-              aria-pressed={space}
-              onClick={() => setDomain("space")}
-            >
-              Space
-            </button>
-          </div>
+          <EditorTabs />
           <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-faint sm:inline">
             {title}
           </span>

@@ -1,4 +1,18 @@
-import { Minus, Plus, RotateCcw, Shuffle, Spline, FlipVertical2, Maximize2, FlipHorizontal2, Undo2, Redo2, Dices } from "lucide-react";
+import {
+  Dices,
+  FlipHorizontal2,
+  FlipVertical2,
+  Maximize2,
+  Minus,
+  Play,
+  Plus,
+  Redo2,
+  RotateCcw,
+  Shuffle,
+  Spline,
+  Square,
+  Undo2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { TreatmentSelector } from "./treatment-selector";
@@ -11,6 +25,7 @@ import {
   contourToPath,
 } from "@/lib/synth/space";
 import { rangeLabel } from "@/lib/synth/keyboard-map";
+import { MOTION_SECONDS } from "@/lib/synth/motion";
 import { cn } from "@/lib/utils";
 
 function MiniWave({ kind, active }: { kind: WavePreset; active: boolean }) {
@@ -160,11 +175,23 @@ export function PresetBar() {
   const mirror = useSynthStore((s) => s.mirror);
   const undo = useSynthStore((s) => s.undo);
   const redo = useSynthStore((s) => s.redo);
+  const motionPlaying = useSynthStore((s) => s.motionPlaying);
+  const motionArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
+  const playMotion = useSynthStore((s) => s.playMotion);
+  const stopMotion = useSynthStore((s) => s.stopMotion);
   const canUndo = useSynthStore((s) =>
-    s.domain === "space" ? s.spacePast.length > 0 : s.past.length > 0,
+    s.domain === "space"
+      ? s.spacePast.length > 0
+      : s.domain === "motion"
+        ? s.motionPast.length > 0
+        : s.past.length > 0,
   );
   const canRedo = useSynthStore((s) =>
-    s.domain === "space" ? s.spaceFuture.length > 0 : s.future.length > 0,
+    s.domain === "space"
+      ? s.spaceFuture.length > 0
+      : s.domain === "motion"
+        ? s.motionFuture.length > 0
+        : s.future.length > 0,
   );
 
   const cycleActions = [
@@ -183,6 +210,59 @@ export function PresetBar() {
     { id: "redo", label: "Redo", icon: Redo2, run: redo, disabled: !canRedo },
     { id: "scatter", label: "Scatter", icon: Dices, run: scatterSpace, disabled: false },
   ] as const;
+
+  if (domain === "motion") {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
+          {MOTION_SECONDS.toFixed(0)} s · one shot
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          <Button
+            variant={motionPlaying ? "solid" : "outline"}
+            size="sm"
+            onClick={playMotion}
+            disabled={!motionArmed}
+            className="h-9 px-3"
+            aria-label={motionPlaying ? "Retrigger Motion" : "Play Motion"}
+          >
+            <Play className="size-3.5" aria-hidden />
+            {motionPlaying ? "Retrigger" : "Play"}
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={stopMotion}
+            disabled={!motionPlaying}
+            className="h-9 px-3"
+          >
+            <Square className="size-3.5" aria-hidden />
+            Stop
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={undo}
+            disabled={!canUndo}
+            className="h-9 px-2"
+          >
+            <Undo2 className="size-3.5" aria-hidden />
+            Undo
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={redo}
+            disabled={!canRedo}
+            className="h-9 px-2"
+          >
+            <Redo2 className="size-3.5" aria-hidden />
+            Redo
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (domain === "space") {
     return (
@@ -282,7 +362,11 @@ export function HeaderBar() {
         <div className="flex items-baseline gap-3">
           <h1 className="phosphor-wordmark text-xl text-fg">Phosphor</h1>
           <p className="hidden font-mono text-[11px] uppercase tracking-[0.2em] text-faint sm:block">
-            {domain === "space" ? "Draw the space" : "Draw the cycle"}
+            {domain === "space"
+              ? "Draw the space"
+              : domain === "motion"
+                ? "Draw the motion"
+                : "Draw the cycle"}
           </p>
         </div>
         <TreatmentSelector />

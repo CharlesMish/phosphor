@@ -5,6 +5,8 @@ import { midiFromCode } from "@/lib/synth/keyboard-map";
 import { useTreatment } from "@/lib/presentation/treatment";
 import { isEditableTarget } from "@/lib/utils";
 import { WaveformEditor } from "./waveform-editor";
+import { MotionEditor } from "./motion-editor";
+import { MotionPlaybackController } from "./motion-playback";
 import { Oscilloscope } from "./oscilloscope";
 import { Piano } from "./piano";
 import { HeaderBar, PresetBar, SideParams } from "./controls";
@@ -82,6 +84,7 @@ export function PhosphorApp() {
       if (e.code === "Escape") {
         e.preventDefault();
         held.clear();
+        useSynthStore.getState().stopMotion();
         synth.allNotesOff();
         return;
       }
@@ -103,6 +106,7 @@ export function PhosphorApp() {
 
     const panic = () => {
       held.clear();
+      useSynthStore.getState().stopMotion();
       synth.allNotesOff();
     };
 
@@ -132,6 +136,7 @@ export function PhosphorApp() {
       tabIndex={0}
       onPointerDown={() => synth.unlock()}
     >
+      <MotionPlaybackController />
       <div className="mx-auto flex min-h-0 w-full max-w-[92rem] flex-1 flex-col gap-2 overflow-hidden px-3 py-2 sm:px-5 sm:py-4 md:gap-3">
         <div className="shrink-0">
           <HeaderBar />
@@ -139,7 +144,7 @@ export function PhosphorApp() {
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-            <WaveformEditor />
+            {domain === "motion" ? <MotionEditor /> : <WaveformEditor />}
             <div className="shrink-0">
               {domain === "space" ? <SpaceBar /> : <MorphBar />}
             </div>
