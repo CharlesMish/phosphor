@@ -4,8 +4,16 @@ import {
   waveformToCoefficients,
 } from "./waveform";
 import { midiToHz } from "./keyboard-map";
-import { buildSpaceBuffer } from "./space";
+import { SPACE_DEFAULT_SECONDS, buildSpaceBuffer } from "./space";
 import { buildOutputSafetyCurve } from "./safety";
+import { buildDriveCurve } from "./drive";
+import {
+  CHORUS_DEFAULT_PERIOD,
+  CHORUS_MAX_MS,
+  CHORUS_MIN_MS,
+  buildChorusPeriodicWave,
+  chorusMixGains,
+} from "./chorus";
 
 const MAX_VOICES = 12;
 const VOICE_GAIN = 0.22;
@@ -14,8 +22,17 @@ const SPACE_FADE = 0.07;
 const WAVE_THROTTLE_MS = 32;
 const MIN_ATTACK = 0.004;
 const MIN_RELEASE = 0.03;
+const CHORUS_FADE = 0.03;
 
-type SpaceSpec = { contour: number[]; seed: number; metal: boolean };
+export const DRIVE_DC_BLOCK_HZ = 10;
+export const DRIVE_OVERSAMPLE: OverSampleType = "4x";
+
+type SpaceSpec = {
+  contour: number[];
+  seed: number;
+  metal: boolean;
+  seconds: number;
+};
 
 type Voice = {
   midi: number;
@@ -74,7 +91,20 @@ function analyserPeak(analyser: AnalyserNode | null): number {
 export class SynthEngine {
   private ctx: AudioContext | null = null;
   private filter: BiquadFilterNode | null = null;
+  private drive: WaveShaperNode | null = null;
+  private driveDcBlock: BiquadFilterNode | null = null;
   private bus: GainNode | null = null;
+  private chorusDry: GainNode | null = null;
+  private chorusWet: GainNode | null = null;
+  private chorusSum: GainNode | null = null;
+  private chorusDelayL: DelayNode | null = null;
+  private chorusDelayR: DelayNode | null = null;
+  private chorusLfoL: OscillatorNode | null = null;
+  private chorusLfoR: OscillatorNode | null = null;
+  private chorusBiasL: ConstantSourceNode | null = null;
+  private chorusBiasR: ConstantSourceNode | null = null;
+  private chorusPeriod = CHORUS_DEFAULT_PERIOD;
+  private chorusCurve: number[] | null = null;
   private master: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
   private dryGain: GainNode | null = null;
@@ -97,6 +127,8 @@ export class SynthEngine {
     cutoff: 1,
   };
   private spaceMix = 0.38;
+  private chorusMix = 0.62;
+  private driveCurve = buildDriveCurve([]);
   private lastWaveAt = 0;
   private pendingSamples: number[] | null = null;
   private space: SpaceSpec | null = null;
@@ -169,8 +201,71 @@ export class SynthEngine {
     this.applyMix();
   }
 
-  setSpace(contour: number[], seed: number, metal = false) {
-    const next = { contour, seed, metal };
+  setChorusMix(mix: number) {
+    this.chorusMix = Math.min(1, Math.max(0, mix));
+    this.applyChorusMix();
+  }
+
+  setChorusPeriod(period: number) {
+    this.chorusPeriod = Math.min(4, Math.max(0.25, period));
+    const now = this.ctx?.currentTime ?? 0;
+    this.chorusLfoL?.frequency.setTargetAtTime(1 / this.chorusPeriod, now, 0.02);
+    this.chorusLfoR?.frequency.setTargetAtTime(1 / this.chorusPeriod, now, 0.02);
+  }
+
+  setChorusCurve(curve: number[]) {
+    this.chorusCurve = curve.slice();
+    if (!this.ctx || !this.chorusLfoL || !this.chorusLfoR) return;
+    const leftSpec = buildChorusPeriodicWave(
+      curve,
+      Math.min(HARMONIC_COUNT, curve.length / 2),
+    );
+    const left = this.ctx.createPeriodicWave(
+      leftSpec.real,
+      leftSpec.imag,
+      { disableNormalization: true },
+    );
+    // A half-cycle stereo shift multiplies every odd harmonic by -1. Derive it
+    // directly so live drawing does not repeat the DFT and extrema proof.
+    const rightReal = new Float32Array(leftSpec.real);
+    const rightImag = new Float32Array(leftSpec.imag);
+    for (let k = 1; k < rightReal.length; k += 2) {
+      rightReal[k] = -(rightReal[k] ?? 0);
+      rightImag[k] = -(rightImag[k] ?? 0);
+    }
+    const right = this.ctx.createPeriodicWave(
+      rightReal,
+      rightImag,
+      { disableNormalization: true },
+    );
+    this.chorusLfoL.setPeriodicWave(left);
+    this.chorusLfoR.setPeriodicWave(right);
+    const now = this.ctx.currentTime;
+    const midpoint = (CHORUS_MAX_MS + CHORUS_MIN_MS) / 2000;
+    const depth = (CHORUS_MAX_MS - CHORUS_MIN_MS) / 2000;
+    // PeriodicWave replacement is immediate, so its separately represented DC
+    // bias must change at the same time. Easing only one half can temporarily
+    // push the summed delay outside 8–24 ms.
+    this.chorusBiasL?.offset.cancelScheduledValues(now);
+    this.chorusBiasR?.offset.cancelScheduledValues(now);
+    this.chorusBiasL?.offset.setValueAtTime(midpoint + leftSpec.bias * depth, now);
+    this.chorusBiasR?.offset.setValueAtTime(midpoint + leftSpec.bias * depth, now);
+  }
+
+  setDriveCurve(authored: number[]) {
+    // Level and DC differences are part of the drawing: do not normalize or
+    // add makeup gain between the authored transfer and the musical shaper.
+    this.driveCurve = buildDriveCurve(authored);
+    if (this.drive) this.drive.curve = this.driveCurve;
+  }
+
+  setSpace(
+    contour: number[],
+    seed: number,
+    metal = false,
+    seconds = SPACE_DEFAULT_SECONDS,
+  ) {
+    const next = { contour, seed, metal, seconds };
     this.space = next;
     this.pendingSpace = next;
     if (!this.ctx) return;
@@ -259,12 +354,55 @@ export class SynthEngine {
 
   dispose() {
     this.allNotesOff();
-    if (this.waveTimer !== null) window.clearTimeout(this.waveTimer);
-    if (this.spaceTimer !== null) window.clearTimeout(this.spaceTimer);
+    if (this.waveTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(this.waveTimer);
+    }
+    if (this.spaceTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(this.spaceTimer);
+    }
+    this.waveTimer = null;
+    this.spaceTimer = null;
+    try {
+      this.chorusLfoL?.stop();
+      this.chorusLfoR?.stop();
+      this.chorusBiasL?.stop();
+      this.chorusBiasR?.stop();
+    } catch {
+      /* already stopped */
+    }
     this.pendingSpace = this.space;
     void this.ctx?.close();
     this.ctx = null;
+    this.filter = null;
+    this.drive = null;
+    this.driveDcBlock = null;
+    this.bus = null;
+    this.chorusDry = null;
+    this.chorusWet = null;
+    this.chorusSum = null;
+    this.chorusDelayL = null;
+    this.chorusDelayR = null;
+    this.chorusLfoL = null;
+    this.chorusLfoR = null;
+    this.chorusBiasL = null;
+    this.chorusBiasR = null;
+    this.dryGain = null;
+    this.wetIn = null;
+    this.convA = null;
+    this.convB = null;
+    this.wetA = null;
+    this.wetB = null;
+    this.sum = null;
+    this.master = null;
+    this.preSafetyAnalyser = null;
+    this.safety = null;
+    this.analyser = null;
+    this.wave = null;
+    this.spaceReady = false;
+    this.spaceFadeUntil = 0;
+    const wasReady = this.ready;
     this.ready = false;
+    if (wasReady) this.readyListeners.forEach((fn) => fn(false));
   }
 
   private buildGraph() {
@@ -276,11 +414,61 @@ export class SynthEngine {
     filter.Q.value = 0.7;
     filter.frequency.value = cutoffHz(this.params.cutoff);
 
+    const drive = ctx.createWaveShaper();
+    drive.curve = this.driveCurve;
+    drive.oversample = DRIVE_OVERSAMPLE;
+
+    const driveDcBlock = ctx.createBiquadFilter();
+    driveDcBlock.type = "highpass";
+    driveDcBlock.frequency.value = DRIVE_DC_BLOCK_HZ;
+    driveDcBlock.Q.value = Math.SQRT1_2;
+
     const bus = ctx.createGain();
     bus.gain.value = 1;
 
+    const chorusDry = ctx.createGain();
+    const chorusWet = ctx.createGain();
+    const initialChorusMix = chorusMixGains(this.chorusMix);
+    chorusDry.gain.value = initialChorusMix.dry;
+    chorusWet.gain.value = initialChorusMix.wet;
+    const chorusDelayL = ctx.createDelay(0.1);
+    const chorusDelayR = ctx.createDelay(0.1);
+    // Modulation inputs sum with the intrinsic AudioParam value. Keep that
+    // intrinsic value at zero so the 16 ms bias +/- 8 ms LFO is honestly 8-24 ms.
+    chorusDelayL.delayTime.value = 0;
+    chorusDelayR.delayTime.value = 0;
+    const merger = ctx.createChannelMerger(2);
+    const lfoL = ctx.createOscillator();
+    const lfoR = ctx.createOscillator();
+    lfoL.frequency.value = 1 / this.chorusPeriod;
+    lfoR.frequency.value = 1 / this.chorusPeriod;
+    const lfoGainL = ctx.createGain();
+    const lfoGainR = ctx.createGain();
+    lfoGainL.gain.value = (CHORUS_MAX_MS - CHORUS_MIN_MS) / 2000;
+    lfoGainR.gain.value = (CHORUS_MAX_MS - CHORUS_MIN_MS) / 2000;
+    const delayBiasL = ctx.createConstantSource();
+    const delayBiasR = ctx.createConstantSource();
+    delayBiasL.offset.value = (CHORUS_MAX_MS + CHORUS_MIN_MS) / 2000;
+    delayBiasR.offset.value = (CHORUS_MAX_MS + CHORUS_MIN_MS) / 2000;
+    lfoL.connect(lfoGainL).connect(chorusDelayL.delayTime);
+    lfoR.connect(lfoGainR).connect(chorusDelayR.delayTime);
+    delayBiasL.connect(chorusDelayL.delayTime);
+    delayBiasR.connect(chorusDelayR.delayTime);
+    bus.connect(chorusDry);
+    bus.connect(chorusDelayL);
+    bus.connect(chorusDelayR);
+    chorusDelayL.connect(merger, 0, 0);
+    chorusDelayR.connect(merger, 0, 1);
+    const chorusSum = ctx.createGain();
+    chorusDry.connect(chorusSum);
+    merger.connect(chorusWet);
+    chorusWet.connect(chorusSum);
+
     const dryGain = ctx.createGain();
     const wetIn = ctx.createGain();
+    const initialSpaceMix = equalPower(this.spaceMix);
+    dryGain.gain.value = initialSpaceMix.dry;
+    wetIn.gain.value = initialSpaceMix.wet;
     const convA = ctx.createConvolver();
     const convB = ctx.createConvolver();
     convA.normalize = false;
@@ -312,9 +500,11 @@ export class SynthEngine {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.1;
 
-    filter.connect(bus);
-    bus.connect(dryGain);
-    bus.connect(wetIn);
+    filter.connect(drive);
+    drive.connect(driveDcBlock);
+    driveDcBlock.connect(bus);
+    chorusSum.connect(dryGain);
+    chorusSum.connect(wetIn);
     wetIn.connect(convA);
     wetIn.connect(convB);
     convA.connect(wetA);
@@ -329,7 +519,18 @@ export class SynthEngine {
     analyser.connect(ctx.destination);
 
     this.filter = filter;
+    this.drive = drive;
+    this.driveDcBlock = driveDcBlock;
     this.bus = bus;
+    this.chorusDry = chorusDry;
+    this.chorusWet = chorusWet;
+    this.chorusSum = chorusSum;
+    this.chorusDelayL = chorusDelayL;
+    this.chorusDelayR = chorusDelayR;
+    this.chorusLfoL = lfoL;
+    this.chorusLfoR = lfoR;
+    this.chorusBiasL = delayBiasL;
+    this.chorusBiasR = delayBiasR;
     this.dryGain = dryGain;
     this.wetIn = wetIn;
     this.convA = convA;
@@ -346,6 +547,16 @@ export class SynthEngine {
     this.spaceFadeUntil = 0;
 
     this.applyMix();
+    this.applyChorusMix();
+    if (this.chorusCurve) this.setChorusCurve(this.chorusCurve);
+    else {
+      lfoL.type = "sine";
+      lfoR.type = "sine";
+    }
+    lfoL.start();
+    lfoR.start();
+    delayBiasL.start();
+    delayBiasR.start();
 
     if (this.pendingSamples) this.flushWaveform();
     else this.wave = ctx.createPeriodicWave(new Float32Array([0, 0]), new Float32Array([0, 0]));
@@ -363,6 +574,14 @@ export class SynthEngine {
     this.wetIn.gain.setTargetAtTime(wet, now, 0.03);
   }
 
+  private applyChorusMix() {
+    if (!this.chorusDry || !this.chorusWet) return;
+    const now = this.ctx?.currentTime ?? 0;
+    const { dry, wet } = chorusMixGains(this.chorusMix);
+    this.chorusDry.gain.setTargetAtTime(dry, now, CHORUS_FADE);
+    this.chorusWet.gain.setTargetAtTime(wet, now, CHORUS_FADE);
+  }
+
   private flushSpace() {
     const pending = this.pendingSpace;
     if (!pending || !this.ctx || !this.convA || !this.convB || !this.wetA || !this.wetB) return;
@@ -378,7 +597,13 @@ export class SynthEngine {
       this.spaceTimer = null;
     }
 
-    const buffer = buildSpaceBuffer(pending.contour, pending.seed, this.ctx, pending.metal);
+    const buffer = buildSpaceBuffer(
+      pending.contour,
+      pending.seed,
+      this.ctx,
+      pending.metal,
+      pending.seconds,
+    );
     this.pendingSpace = null;
 
     if (!this.spaceReady) {

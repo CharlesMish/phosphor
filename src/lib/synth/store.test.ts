@@ -7,6 +7,8 @@ import {
   createDefaultMotionPath,
 } from "./motion.ts";
 import { generateSpaceContour } from "./space.ts";
+import { generateDrivePreset } from "./drive.ts";
+import { generateChorusPreset } from "./chorus.ts";
 import { useSynthStore } from "./store.ts";
 import { generatePreset } from "./waveform.ts";
 
@@ -30,6 +32,12 @@ function resetStore() {
       motionMode: DEFAULT_MOTION_MODE,
       motionPast: [],
       motionFuture: [],
+      driveCurve: initialState.driveCurve.slice(),
+      drivePast: [],
+      driveFuture: [],
+      chorusCurve: initialState.chorusCurve.slice(),
+      chorusPast: [],
+      chorusFuture: [],
       spaceContour: initialState.spaceContour.slice(),
       spaceView: initialState.spaceView.slice(),
       spacePast: [],
@@ -270,6 +278,9 @@ describe("MOTION store authority", () => {
     assert.equal(useSynthStore.getState().motionPlaying, true);
     useSynthStore.getState().setSpaceMix(0.6);
     assert.equal(useSynthStore.getState().motionPlaying, true);
+    useSynthStore.getState().setSpaceLength(2.4);
+    useSynthStore.getState().commitSpaceLength(2.4);
+    assert.equal(useSynthStore.getState().motionPlaying, true);
 
     useSynthStore.getState().setDomain("space");
     useSynthStore.getState().undo();
@@ -281,10 +292,37 @@ describe("MOTION store authority", () => {
   it("allows editor-domain changes without stopping playback", () => {
     armMorph();
     startMotion();
-    for (const domain of ["motion", "space", "cycle"] as const) {
+    for (const domain of ["cycle", "motion", "drive", "chorus", "space"] as const) {
       useSynthStore.getState().setDomain(domain);
       assert.equal(useSynthStore.getState().motionPlaying, true);
     }
+  });
+
+  it("allows DRIVE and CHORUS operations without stopping playback", () => {
+    armMorph();
+    startMotion();
+
+    const driveBefore = generateDrivePreset("identity");
+    const driveAfter = generateDrivePreset("hard");
+    useSynthStore.getState().setLiveDrive(driveAfter);
+    useSynthStore.getState().finishDriveGesture(driveBefore, driveAfter);
+    useSynthStore.getState().applyDrivePreset("soft");
+    useSynthStore.getState().setDomain("drive");
+    useSynthStore.getState().undo();
+    useSynthStore.getState().redo();
+    assert.equal(useSynthStore.getState().motionPlaying, true);
+
+    const chorusBefore = generateChorusPreset("sine");
+    const chorusAfter = generateChorusPreset("triangle");
+    useSynthStore.getState().setLiveChorus(chorusAfter);
+    useSynthStore.getState().finishChorusGesture(chorusBefore, chorusAfter);
+    useSynthStore.getState().applyChorusPreset("wild");
+    useSynthStore.getState().setChorusPeriod(0.8);
+    useSynthStore.getState().setChorusMix(0.5);
+    useSynthStore.getState().setDomain("chorus");
+    useSynthStore.getState().undo();
+    useSynthStore.getState().redo();
+    assert.equal(useSynthStore.getState().motionPlaying, true);
   });
 
   it("rejects a stale playback update from an old run", () => {
@@ -321,6 +359,142 @@ describe("MOTION store authority", () => {
     assert.ok(state.motionRunId > first);
     assert.equal(state.motionProgress, 0);
     assert.equal(state.morph, state.motionPath[0]);
+  });
+});
+
+describe("editor history isolation", () => {
+  beforeEach(resetStore);
+
+  it("routes Undo and Redo only to the active CYCLE, MOTION, DRIVE, CHORUS, or SPACE stack", () => {
+    const cycleBefore = initialState.samples.slice();
+    const cycleAfter = generatePreset("triangle");
+    useSynthStore.getState().setLiveSamples(cycleAfter);
+    useSynthStore.getState().finishGesture(cycleBefore, cycleAfter);
+
+    const motionBefore = createDefaultMotionPath();
+    const motionAfter = motionBefore.slice();
+    motionAfter[24] = 0.9;
+    useSynthStore.getState().setLiveMotionPath(motionAfter);
+    useSynthStore.getState().finishMotionGesture(motionBefore, motionAfter);
+
+    const driveBefore = generateDrivePreset("identity");
+    const driveAfter = generateDrivePreset("hard");
+    useSynthStore.getState().setLiveDrive(driveAfter);
+    useSynthStore.getState().finishDriveGesture(driveBefore, driveAfter);
+
+    const chorusBefore = generateChorusPreset("sine");
+    const chorusAfter = generateChorusPreset("triangle");
+    useSynthStore.getState().setLiveChorus(chorusAfter);
+    useSynthStore.getState().finishChorusGesture(chorusBefore, chorusAfter);
+
+    const spaceBefore = generateSpaceContour("room");
+    const spaceAfter = spaceBefore.slice();
+    spaceAfter[48] = 0.8;
+    useSynthStore.getState().setLiveContour(spaceAfter);
+    useSynthStore.getState().finishSpaceGesture(spaceBefore, spaceAfter);
+    useSynthStore.getState().setSpaceLength(2.7);
+    useSynthStore.getState().commitSpaceLength(2.7);
+
+    const historySizes = () => {
+      const state = useSynthStore.getState();
+      return {
+        cycle: [state.past.length, state.future.length],
+        motion: [state.motionPast.length, state.motionFuture.length],
+        drive: [state.drivePast.length, state.driveFuture.length],
+        chorus: [state.chorusPast.length, state.chorusFuture.length],
+        space: [state.spacePast.length, state.spaceFuture.length],
+      };
+    };
+    const domains = ["cycle", "motion", "drive", "chorus", "space"] as const;
+    type Domain = (typeof domains)[number];
+    const expected: Record<Domain, number[]> = {
+      cycle: [1, 0],
+      motion: [1, 0],
+      drive: [1, 0],
+      chorus: [1, 0],
+      space: [1, 0],
+    };
+    assert.deepEqual(historySizes(), expected);
+
+    for (const domain of domains) {
+      useSynthStore.getState().setDomain(domain);
+      useSynthStore.getState().undo();
+      expected[domain] = [0, 1];
+      assert.deepEqual(historySizes(), expected);
+    }
+    assert.equal(useSynthStore.getState().spaceSeconds, 2.7);
+
+    for (const domain of domains) {
+      useSynthStore.getState().setDomain(domain);
+      useSynthStore.getState().redo();
+      expected[domain] = [1, 0];
+      assert.deepEqual(historySizes(), expected);
+    }
+    assert.equal(useSynthStore.getState().spaceSeconds, 2.7);
+  });
+});
+
+describe("CHORUS store history", () => {
+  beforeEach(resetStore);
+
+  it("does not add history or clear redo when the active preset is reapplied", () => {
+    useSynthStore.getState().setDomain("chorus");
+    useSynthStore.getState().applyChorusPreset("triangle");
+    useSynthStore.getState().undo();
+
+    let state = useSynthStore.getState();
+    assert.equal(state.chorusPreset, "sine");
+    assert.equal(state.chorusPast.length, 0);
+    assert.equal(state.chorusFuture.length, 1);
+
+    useSynthStore.getState().applyChorusPreset("sine");
+    state = useSynthStore.getState();
+    assert.equal(state.chorusPreset, "sine");
+    assert.equal(state.chorusPast.length, 0);
+    assert.equal(state.chorusFuture.length, 1);
+  });
+
+  it("keeps redo available after a no-op drawing gesture", () => {
+    const sine = generateChorusPreset("sine");
+    useSynthStore.getState().setDomain("chorus");
+    useSynthStore.getState().applyChorusPreset("triangle");
+    useSynthStore.getState().undo();
+
+    useSynthStore.getState().finishChorusGesture(sine, sine.slice());
+    let state = useSynthStore.getState();
+    assert.equal(state.chorusPreset, "sine");
+    assert.equal(state.chorusPast.length, 0);
+    assert.equal(state.chorusFuture.length, 1);
+
+    useSynthStore.getState().redo();
+    state = useSynthStore.getState();
+    assert.equal(state.chorusPreset, "triangle");
+    assert.deepEqual(state.chorusCurve, generateChorusPreset("triangle"));
+  });
+
+  it("restores preset and custom identities through Undo and Redo", () => {
+    useSynthStore.getState().setDomain("chorus");
+    useSynthStore.getState().applyChorusPreset("triangle");
+    useSynthStore.getState().undo();
+    assert.equal(useSynthStore.getState().chorusPreset, "sine");
+
+    useSynthStore.getState().redo();
+    assert.equal(useSynthStore.getState().chorusPreset, "triangle");
+
+    const triangle = generateChorusPreset("triangle");
+    const custom = triangle.slice();
+    custom[17] = 0.123;
+    useSynthStore.getState().setLiveChorus(custom);
+    useSynthStore.getState().finishChorusGesture(triangle, custom);
+    useSynthStore.getState().applyChorusPreset("wild");
+
+    useSynthStore.getState().undo();
+    assert.equal(useSynthStore.getState().chorusPreset, "custom");
+    assert.deepEqual(useSynthStore.getState().chorusCurve, custom);
+
+    useSynthStore.getState().redo();
+    assert.equal(useSynthStore.getState().chorusPreset, "wild");
+    assert.deepEqual(useSynthStore.getState().chorusCurve, generateChorusPreset("wild"));
   });
 });
 

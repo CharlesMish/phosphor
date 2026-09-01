@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 const EDITORS: Array<{ domain: EditorDomain; label: string }> = [
   { domain: "cycle", label: "Cycle" },
   { domain: "motion", label: "Motion" },
+  { domain: "drive", label: "Drive" },
+  { domain: "chorus", label: "Chorus" },
   { domain: "space", label: "Space" },
 ];
 
@@ -13,7 +15,7 @@ export function EditorTabs() {
 
   return (
     <div
-      className="pointer-events-auto flex rounded-md bg-surface-2 p-0.5 shadow-border"
+      className="pointer-events-auto flex min-w-0 overflow-x-auto rounded-md bg-surface-2 p-0.5 shadow-border"
       aria-label="Drawing editor"
       role="group"
     >
@@ -24,7 +26,7 @@ export function EditorTabs() {
             key={editor.domain}
             type="button"
             className={cn(
-              "h-7 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+              "h-7 shrink-0 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
               active ? "bg-active text-active-ink" : "text-faint hover:text-fg",
             )}
             aria-pressed={active}

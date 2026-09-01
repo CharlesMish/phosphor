@@ -4,20 +4,29 @@ import {
   type CanvasTreatmentTokens,
 } from "@/lib/presentation/canvas-tokens";
 import { useTreatment } from "@/lib/presentation/treatment";
-import { useSynthStore } from "@/lib/synth/store";
+import { useSynthStore, type EditorDomain } from "@/lib/synth/store";
 import { WAVE_SIZE } from "@/lib/synth/waveform";
 import {
-  SPACE_SECONDS,
   SPACE_SIZE,
   buildSpaceView,
   sampleContour,
 } from "@/lib/synth/space";
+import { DRIVE_SIZE } from "@/lib/synth/drive";
+import {
+  CHORUS_MAX_MS,
+  CHORUS_MIN_MS,
+  CHORUS_SIZE,
+  chorusDelayMs,
+  phaseShiftCurve,
+} from "@/lib/synth/chorus";
 import { synth } from "@/lib/synth/engine";
 import { cn } from "@/lib/utils";
 import { EditorTabs } from "./editor-tabs";
 
 const PAD_X = 44;
 const PAD_Y = 40;
+
+type DrawingDomain = Exclude<EditorDomain, "motion">;
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
@@ -72,32 +81,48 @@ export function WaveformEditor() {
   const domain = useSynthStore((s) => s.domain);
   const { treatment } = useTreatment();
   const samples = useSynthStore((s) => s.samples);
+  const driveCurve = useSynthStore((s) => s.driveCurve);
+  const chorusCurve = useSynthStore((s) => s.chorusCurve);
   const spaceContour = useSynthStore((s) => s.spaceContour);
   const spaceView = useSynthStore((s) => s.spaceView);
+  const spaceSeconds = useSynthStore((s) => s.spaceSeconds);
   const hasDrawn = useSynthStore((s) => s.hasDrawn);
+  const driveHasDrawn = useSynthStore((s) => s.driveHasDrawn);
   const spaceHasDrawn = useSynthStore((s) => s.spaceHasDrawn);
   const morphLive = useSynthStore((s) => s.morphLive);
   const morphArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
   const setLiveSamples = useSynthStore((s) => s.setLiveSamples);
   const finishGesture = useSynthStore((s) => s.finishGesture);
+  const setLiveDrive = useSynthStore((s) => s.setLiveDrive);
+  const finishDriveGesture = useSynthStore((s) => s.finishDriveGesture);
+  const setLiveChorus = useSynthStore((s) => s.setLiveChorus);
+  const finishChorusGesture = useSynthStore((s) => s.finishChorusGesture);
   const setLiveContour = useSynthStore((s) => s.setLiveContour);
   const finishSpaceGesture = useSynthStore((s) => s.finishSpaceGesture);
   const markDrawn = useSynthStore((s) => s.markDrawn);
   const markSpaceDrawn = useSynthStore((s) => s.markSpaceDrawn);
 
   const liveRef = useRef<number[]>(samples);
+  const driveRef = useRef<number[]>(driveCurve);
+  const chorusRef = useRef<number[]>(chorusCurve);
   const contourRef = useRef<number[]>(spaceContour);
   const viewRef = useRef<number[]>(spaceView);
+  const secondsRef = useRef(spaceSeconds);
   const domainRef = useRef(domain);
   const drawingRef = useRef(false);
+  const gestureDomainRef = useRef<DrawingDomain | null>(null);
+  const pointerIdRef = useRef<number | null>(null);
   const lastIndexRef = useRef<number | null>(null);
   const originRef = useRef<number[] | null>(null);
 
   domainRef.current = domain;
   if (!drawingRef.current) {
     liveRef.current = samples;
+    driveRef.current = driveCurve;
+    chorusRef.current = chorusCurve;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
+    secondsRef.current = spaceSeconds;
   }
 
   const paint = useCallback(() => {
@@ -130,6 +155,8 @@ export function WaveformEditor() {
     const yAt = (v: number) => padY + (0.5 - v * 0.5) * innerH;
     const yEnergy = (e: number) => padY + (1 - clamp(e, 0, 1)) * innerH;
     const space = domainRef.current === "space";
+    const drive = domainRef.current === "drive";
+    const chorus = domainRef.current === "chorus";
 
     drawPlotGrid(ctx, padX, padY, innerW, innerH, tokens);
 
@@ -207,7 +234,114 @@ export function WaveformEditor() {
       ctx.textBaseline = "top";
       ctx.fillText("0 s", padX, padY + innerH + 8);
       ctx.textAlign = "right";
-      ctx.fillText(`${SPACE_SECONDS.toFixed(1)} s`, padX + innerW, padY + innerH + 8);
+      ctx.fillText(`${secondsRef.current.toFixed(1)} s`, padX + innerW, padY + innerH + 8);
+    } else if (drive) {
+      const curve = driveRef.current;
+      const n = curve.length || DRIVE_SIZE;
+      const xAt = (i: number) => padX + (i / Math.max(1, n - 1)) * innerW;
+
+      ctx.strokeStyle = tokens.axis;
+      ctx.beginPath();
+      ctx.moveTo(padX, yAt(0));
+      ctx.lineTo(padX + innerW, yAt(0));
+      ctx.moveTo(padX + innerW * 0.5, padY);
+      ctx.lineTo(padX + innerW * 0.5, padY + innerH);
+      ctx.stroke();
+
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = tokens.annotation;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 5]);
+      ctx.beginPath();
+      ctx.moveTo(padX, yAt(-1));
+      ctx.lineTo(padX + innerW, yAt(1));
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.strokeStyle = tokens.tracePrimary;
+      ctx.lineWidth = tokens.traceWidth;
+      ctx.shadowColor = tokens.tracePrimary;
+      ctx.shadowBlur = tokens.traceGlow;
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = xAt(i);
+        const y = yAt(curve[i] ?? 0);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.fillStyle = tokens.annotation;
+      ctx.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText("+1", 8, yAt(1));
+      ctx.fillText("0", 12, yAt(0));
+      ctx.fillText("−1", 8, yAt(-1));
+      ctx.textBaseline = "top";
+      ctx.fillText("−1 in", padX, padY + innerH + 8);
+      ctx.textAlign = "center";
+      ctx.fillText("0", padX + innerW * 0.5, padY + innerH + 8);
+      ctx.textAlign = "right";
+      ctx.fillText("+1 in", padX + innerW, padY + innerH + 8);
+    } else if (chorus) {
+      const curve = chorusRef.current;
+      const n = curve.length || CHORUS_SIZE;
+      const xLin = (i: number) => padX + (i / Math.max(1, n - 1)) * innerW;
+      const yDelay = (v: number) =>
+        padY +
+        (1 -
+          (chorusDelayMs(v) - CHORUS_MIN_MS) /
+            (CHORUS_MAX_MS - CHORUS_MIN_MS)) *
+          innerH;
+
+      ctx.strokeStyle = tokens.axis;
+      ctx.beginPath();
+      ctx.moveTo(padX, padY);
+      ctx.lineTo(padX, padY + innerH);
+      ctx.lineTo(padX + innerW, padY + innerH);
+      ctx.stroke();
+
+      ctx.fillStyle = tokens.annotation;
+      ctx.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "left";
+      ctx.fillText(`${CHORUS_MAX_MS} ms`, 8, padY);
+      ctx.fillText(`${CHORUS_MIN_MS} ms`, 8, padY + innerH);
+      ctx.textBaseline = "top";
+      ctx.textAlign = "right";
+      ctx.fillText("0°", padX, padY + innerH + 8);
+      ctx.fillText("360°", padX + innerW, padY + innerH + 8);
+
+      const stroke = (values: number[], color: string, alpha: number, width: number) => {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        values.forEach((v, i) => {
+          const x = xLin(i);
+          const y = yDelay(v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.restore();
+      };
+      stroke(curve, tokens.tracePrimary, 1, tokens.traceWidth);
+      stroke(phaseShiftCurve(curve), tokens.traceSecondary, 0.35, 1);
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = tokens.annotation;
+      ctx.textAlign = "left";
+      ctx.fillText("authored", padX + 8, padY + 12);
+      ctx.fillStyle = tokens.traceSecondary;
+      ctx.fillText("derived stereo", padX + 8, padY + 27);
     } else {
       ctx.strokeStyle = tokens.axis;
       ctx.beginPath();
@@ -296,11 +430,23 @@ export function WaveformEditor() {
 
   useEffect(() => {
     liveRef.current = samples;
+    driveRef.current = driveCurve;
+    chorusRef.current = chorusCurve;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
+    secondsRef.current = spaceSeconds;
     domainRef.current = domain;
     paint();
-  }, [samples, spaceContour, spaceView, domain, paint]);
+  }, [
+    samples,
+    driveCurve,
+    chorusCurve,
+    spaceContour,
+    spaceView,
+    spaceSeconds,
+    domain,
+    paint,
+  ]);
 
   useEffect(() => {
     paint();
@@ -315,7 +461,10 @@ export function WaveformEditor() {
     return () => ro.disconnect();
   }, [paint]);
 
-  const eventToHit = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const eventToHit = (
+    e: React.PointerEvent<HTMLCanvasElement>,
+    targetDomain: DrawingDomain,
+  ) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
@@ -323,9 +472,17 @@ export function WaveformEditor() {
     const innerH = rect.height - PAD_Y * 2;
     const x = clamp((e.clientX - rect.left - PAD_X) / innerW, 0, 1);
     const y = clamp((e.clientY - rect.top - PAD_Y) / innerH, 0, 1);
-    if (domainRef.current === "space") {
+    if (targetDomain === "space") {
       const index = clamp(Math.round(x * (SPACE_SIZE - 1)), 0, SPACE_SIZE - 1);
       return { index, value: clamp(1 - y, 0, 1), size: SPACE_SIZE };
+    }
+    if (targetDomain === "drive") {
+      const index = clamp(Math.round(x * (DRIVE_SIZE - 1)), 0, DRIVE_SIZE - 1);
+      return { index, value: clamp(1 - 2 * y, -1, 1), size: DRIVE_SIZE };
+    }
+    if (targetDomain === "chorus") {
+      const index = clamp(Math.round(x * (CHORUS_SIZE - 1)), 0, CHORUS_SIZE - 1);
+      return { index, value: clamp(1 - 2 * y, -1, 1), size: CHORUS_SIZE };
     }
     const index = clamp(Math.round(x * WAVE_SIZE) % WAVE_SIZE, 0, WAVE_SIZE - 1);
     const value = clamp(1 - 2 * y, -1, 1);
@@ -345,16 +502,28 @@ export function WaveformEditor() {
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (drawingRef.current || domainRef.current === "motion") return;
+    const gestureDomain = domainRef.current;
+    const hit = eventToHit(e, gestureDomain);
+    if (!hit) return;
     synth.unlock();
     e.currentTarget.setPointerCapture(e.pointerId);
     drawingRef.current = true;
-    const space = domainRef.current === "space";
+    gestureDomainRef.current = gestureDomain;
+    pointerIdRef.current = e.pointerId;
+    const space = gestureDomain === "space";
+    const drive = gestureDomain === "drive";
+    const chorus = gestureDomain === "chorus";
     if (space) markSpaceDrawn();
-    else markDrawn();
-    const source = space ? contourRef.current : liveRef.current;
+    else if (!drive && !chorus) markDrawn();
+    const source = space
+      ? contourRef.current
+      : drive
+        ? driveRef.current
+        : chorus
+          ? chorusRef.current
+          : liveRef.current;
     originRef.current = source.slice();
-    const hit = eventToHit(e);
-    if (!hit) return;
     const wave = source.slice();
     wave[hit.index] = hit.value;
     lastIndexRef.current = hit.index;
@@ -362,6 +531,12 @@ export function WaveformEditor() {
       contourRef.current = wave;
       viewRef.current = buildSpaceView(wave, useSynthStore.getState().spaceSeed);
       setLiveContour(wave);
+    } else if (drive) {
+      driveRef.current = wave;
+      setLiveDrive(wave);
+    } else if (chorus) {
+      chorusRef.current = wave;
+      setLiveChorus(wave);
     } else {
       liveRef.current = wave;
       setLiveSamples(wave, false);
@@ -370,11 +545,23 @@ export function WaveformEditor() {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drawingRef.current) return;
-    const hit = eventToHit(e);
+    if (!drawingRef.current || pointerIdRef.current !== e.pointerId) return;
+    const gestureDomain = gestureDomainRef.current;
+    if (!gestureDomain) return;
+    const hit = eventToHit(e, gestureDomain);
     if (!hit) return;
-    const space = domainRef.current === "space";
-    const wave = (space ? contourRef.current : liveRef.current).slice();
+    const space = gestureDomain === "space";
+    const drive = gestureDomain === "drive";
+    const chorus = gestureDomain === "chorus";
+    const wave = (
+      space
+        ? contourRef.current
+        : drive
+          ? driveRef.current
+          : chorus
+            ? chorusRef.current
+            : liveRef.current
+    ).slice();
     const last = lastIndexRef.current;
     if (last === null || last === hit.index) {
       wave[hit.index] = hit.value;
@@ -386,6 +573,12 @@ export function WaveformEditor() {
       contourRef.current = wave;
       viewRef.current = buildSpaceView(wave, useSynthStore.getState().spaceSeed);
       setLiveContour(wave);
+    } else if (drive) {
+      driveRef.current = wave;
+      setLiveDrive(wave);
+    } else if (chorus) {
+      chorusRef.current = wave;
+      setLiveChorus(wave);
     } else {
       liveRef.current = wave;
       setLiveSamples(wave, false);
@@ -393,39 +586,78 @@ export function WaveformEditor() {
     paint();
   };
 
-  const endDraw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const finishActiveGesture = useCallback(() => {
     if (!drawingRef.current) return;
+    const gestureDomain = gestureDomainRef.current;
     drawingRef.current = false;
+    gestureDomainRef.current = null;
+    pointerIdRef.current = null;
     lastIndexRef.current = null;
+    if (!gestureDomain) return;
+    const space = gestureDomain === "space";
+    const drive = gestureDomain === "drive";
+    const chorus = gestureDomain === "chorus";
+    const current = space
+      ? contourRef.current
+      : drive
+        ? driveRef.current
+        : chorus
+          ? chorusRef.current
+          : liveRef.current;
+    const origin = originRef.current ?? current;
+    originRef.current = null;
+    if (space) finishSpaceGesture(origin, contourRef.current);
+    else if (drive) finishDriveGesture(origin, driveRef.current);
+    else if (chorus) finishChorusGesture(origin, chorusRef.current);
+    else finishGesture(origin, liveRef.current);
+  }, [
+    finishChorusGesture,
+    finishDriveGesture,
+    finishGesture,
+    finishSpaceGesture,
+  ]);
+
+  const endDraw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current || pointerIdRef.current !== e.pointerId) return;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
       /* already released */
     }
-    const space = domainRef.current === "space";
-    const origin = originRef.current ?? (space ? contourRef.current : liveRef.current);
-    originRef.current = null;
-    if (space) finishSpaceGesture(origin, contourRef.current);
-    else finishGesture(origin, liveRef.current);
+    finishActiveGesture();
   };
 
+  useEffect(() => () => finishActiveGesture(), [finishActiveGesture]);
+
   const space = domain === "space";
+  const drive = domain === "drive";
+  const chorus = domain === "chorus";
   const title = space
     ? "Space · impulse response"
-    : `Oscillator · ${morphArmed && !morphLive ? "custom" : "1 cycle"}`;
-  const showHint = space ? !spaceHasDrawn : !hasDrawn;
+    : drive
+      ? "Drive · transfer function"
+      : chorus
+        ? "Chorus · delay-time cycle"
+        : `Oscillator · ${morphArmed && !morphLive ? "custom" : "1 cycle"}`;
+  const showHint = chorus ? false : space ? !spaceHasDrawn : drive ? !driveHasDrawn : !hasDrawn;
 
   return (
     <div className="relative flex min-h-32 flex-1 flex-col overflow-hidden rounded-xl bg-plot shadow-border md:min-h-0">
-      <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
+      <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <EditorTabs />
           <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-faint sm:inline">
             {title}
           </span>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
-          {space ? `0 s → ${SPACE_SECONDS.toFixed(1)} s` : "−1 ↔ +1"}
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
+          {space
+            ? `0 s → ${spaceSeconds.toFixed(1)} s`
+            : drive
+              ? "input → output"
+              : chorus
+                ? `${CHORUS_MIN_MS} ↔ ${CHORUS_MAX_MS} ms`
+                : "−1 ↔ +1"}
         </span>
       </div>
       <canvas
@@ -435,7 +667,15 @@ export function WaveformEditor() {
         onPointerMove={onPointerMove}
         onPointerUp={endDraw}
         onPointerCancel={endDraw}
-        aria-label={space ? "Draw space impulse response" : "Draw oscillator waveform"}
+        aria-label={
+          space
+            ? "Draw space impulse response"
+            : drive
+              ? "Draw drive transfer function"
+              : chorus
+                ? "Draw chorus delay-time modulation"
+                : "Draw oscillator waveform"
+        }
       />
       {showHint && (
         <p
@@ -444,7 +684,11 @@ export function WaveformEditor() {
             "font-mono text-xs tracking-wide text-muted/80",
           )}
         >
-          {space ? "Drag to draw this response" : "Drag to redraw this cycle"}
+          {space
+            ? "Drag to draw this response"
+            : drive
+              ? "Drag to shape input into output"
+              : "Drag to redraw this cycle"}
         </p>
       )}
     </div>

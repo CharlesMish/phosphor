@@ -12,15 +12,19 @@ import { Piano } from "./piano";
 import { HeaderBar, PresetBar, SideParams } from "./controls";
 import { MorphBar } from "./morph-bar";
 import { SpaceBar } from "./space-bar";
+import { DriveBar } from "./drive-bar";
+import { ChorusBar } from "./chorus-bar";
 
 type PhosphorDebug = {
   peak: () => number;
   mix: () => number;
+  length: () => number;
   domain: () => string;
   seed: () => number;
   contour: () => number[];
   view: () => number[];
   samples: () => number[];
+  driveCurve: () => number[];
   preset: () => string;
   spacePreset: () => string;
   voices: () => number[];
@@ -47,11 +51,13 @@ export function PhosphorApp() {
     w.__phosphor = {
       peak: () => synth.measurePeak(),
       mix: () => useSynthStore.getState().spaceMix,
+      length: () => useSynthStore.getState().spaceSeconds,
       domain: () => useSynthStore.getState().domain,
       seed: () => useSynthStore.getState().spaceSeed,
       contour: () => useSynthStore.getState().spaceContour.slice(),
       view: () => useSynthStore.getState().spaceView.slice(),
       samples: () => useSynthStore.getState().samples.slice(),
+      driveCurve: () => useSynthStore.getState().driveCurve.slice(),
       preset: () => String(useSynthStore.getState().preset),
       spacePreset: () => String(useSynthStore.getState().spacePreset),
       voices: () => useSynthStore.getState().activeNotes.slice(),
@@ -146,7 +152,15 @@ export function PhosphorApp() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             {domain === "motion" ? <MotionEditor /> : <WaveformEditor />}
             <div className="shrink-0">
-              {domain === "space" ? <SpaceBar /> : <MorphBar />}
+              {domain === "space" ? (
+                <SpaceBar />
+              ) : domain === "drive" ? (
+                <DriveBar />
+              ) : domain === "chorus" ? (
+                <ChorusBar />
+              ) : (
+                <MorphBar />
+              )}
             </div>
           </div>
           <div className="flex w-full min-h-0 flex-col gap-3 lg:w-72 lg:shrink-0">

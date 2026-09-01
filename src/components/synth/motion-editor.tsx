@@ -82,6 +82,7 @@ export function MotionEditor() {
   const progressRef = useRef(motionProgress);
   const durationRef = useRef(motionDurationSeconds(motionBpm, motionBeats));
   const drawingRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
   const lastIndexRef = useRef<number | null>(null);
   const lastValueRef = useRef<number | null>(null);
   const originRef = useRef<number[] | null>(null);
@@ -223,14 +224,15 @@ export function MotionEditor() {
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!armedRef.current) return;
+    if (!armedRef.current || drawingRef.current) return;
+    const hit = eventToHit(e);
+    if (!hit) return;
     synth.unlock();
     stopMotion();
     e.currentTarget.setPointerCapture(e.pointerId);
     drawingRef.current = true;
+    pointerIdRef.current = e.pointerId;
     originRef.current = pathRef.current.slice();
-    const hit = eventToHit(e);
-    if (!hit) return;
     const path = pathRef.current.slice();
     path[hit.index] = hit.value;
     pathRef.current = path;
@@ -242,7 +244,7 @@ export function MotionEditor() {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drawingRef.current) return;
+    if (!drawingRef.current || pointerIdRef.current !== e.pointerId) return;
     const hit = eventToHit(e);
     if (!hit) return;
     const path = pathRef.current.slice();
@@ -260,33 +262,41 @@ export function MotionEditor() {
     paint();
   };
 
-  const endDraw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const finishActiveGesture = useCallback(() => {
     if (!drawingRef.current) return;
     drawingRef.current = false;
+    pointerIdRef.current = null;
     lastIndexRef.current = null;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      /* already released */
-    }
     const origin = originRef.current ?? pathRef.current;
     const lastValue = lastValueRef.current;
     originRef.current = null;
     lastValueRef.current = null;
     finishMotionGesture(origin, pathRef.current);
     if (lastValue !== null) auditionMotion(lastValue, true);
+  }, [auditionMotion, finishMotionGesture]);
+
+  const endDraw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current || pointerIdRef.current !== e.pointerId) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    finishActiveGesture();
   };
+
+  useEffect(() => () => finishActiveGesture(), [finishActiveGesture]);
 
   return (
     <div className="relative flex min-h-32 flex-1 flex-col overflow-hidden rounded-xl bg-plot shadow-border md:min-h-0">
-      <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
+      <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <EditorTabs />
           <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-faint sm:inline">
             Motion · A/B trajectory
           </span>
         </div>
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
           {motionBeats} {motionBeats === 1 ? "beat" : "beats"} ·{" "}
           {formatSeconds(motionDurationSeconds(motionBpm, motionBeats))}
         </span>

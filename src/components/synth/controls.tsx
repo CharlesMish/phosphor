@@ -16,7 +16,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { TreatmentSelector } from "./treatment-selector";
-import { useSynthStore, type WavePreset, type SpacePreset } from "@/lib/synth/store";
+import {
+  useSynthStore,
+  type DrivePreset,
+  type SpacePreset,
+  type WavePreset,
+} from "@/lib/synth/store";
 import { PRESET_LABEL, PRESET_ORDER, generatePreset } from "@/lib/synth/waveform";
 import {
   SPACE_PRESET_LABEL,
@@ -24,6 +29,17 @@ import {
   generateSpaceContour,
   contourToPath,
 } from "@/lib/synth/space";
+import {
+  DRIVE_PRESET_LABEL,
+  DRIVE_PRESET_ORDER,
+  generateDrivePreset,
+  transferToPath,
+} from "@/lib/synth/drive";
+import {
+  CHORUS_PRESET_LABEL,
+  CHORUS_PRESET_ORDER,
+  type ChorusPreset,
+} from "@/lib/synth/chorus";
 import { rangeLabel } from "@/lib/synth/keyboard-map";
 import {
   MOTION_BEAT_LENGTHS,
@@ -79,6 +95,24 @@ function MiniContour({ kind, active }: { kind: SpacePreset; active: boolean }) {
   const w = 44;
   const h = 16;
   const d = contourToPath(generateSpaceContour(kind), w, h, 12);
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="overflow-visible">
+      <path
+        d={d}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={active ? 1.6 : 1.2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function MiniTransfer({ kind, active }: { kind: DrivePreset; active: boolean }) {
+  const w = 44;
+  const h = 16;
+  const d = transferToPath(generateDrivePreset(kind), w, h, 8);
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="overflow-visible">
       <path
@@ -170,8 +204,12 @@ export function SideParams() {
 export function PresetBar() {
   const domain = useSynthStore((s) => s.domain);
   const preset = useSynthStore((s) => s.preset);
+  const drivePreset = useSynthStore((s) => s.drivePreset);
+  const chorusPreset = useSynthStore((s) => s.chorusPreset);
   const spacePreset = useSynthStore((s) => s.spacePreset);
   const applyPreset = useSynthStore((s) => s.applyPreset);
+  const applyDrivePreset = useSynthStore((s) => s.applyDrivePreset);
+  const applyChorusPreset = useSynthStore((s) => s.applyChorusPreset);
   const applySpacePreset = useSynthStore((s) => s.applySpacePreset);
   const scatterSpace = useSynthStore((s) => s.scatterSpace);
   const resetWave = useSynthStore((s) => s.resetWave);
@@ -197,14 +235,22 @@ export function PresetBar() {
       ? s.spacePast.length > 0
       : s.domain === "motion"
         ? s.motionPast.length > 0
-        : s.past.length > 0,
+        : s.domain === "drive"
+          ? s.drivePast.length > 0
+          : s.domain === "chorus"
+            ? s.chorusPast.length > 0
+            : s.past.length > 0,
   );
   const canRedo = useSynthStore((s) =>
     s.domain === "space"
       ? s.spaceFuture.length > 0
       : s.domain === "motion"
         ? s.motionFuture.length > 0
-        : s.future.length > 0,
+        : s.domain === "drive"
+          ? s.driveFuture.length > 0
+          : s.domain === "chorus"
+            ? s.chorusFuture.length > 0
+            : s.future.length > 0,
   );
 
   const cycleActions = [
@@ -222,6 +268,11 @@ export function PresetBar() {
     { id: "undo", label: "Undo", icon: Undo2, run: undo, disabled: !canUndo },
     { id: "redo", label: "Redo", icon: Redo2, run: redo, disabled: !canRedo },
     { id: "scatter", label: "Scatter", icon: Dices, run: scatterSpace, disabled: false },
+  ] as const;
+
+  const fxActions = [
+    { id: "undo", label: "Undo", icon: Undo2, run: undo, disabled: !canUndo },
+    { id: "redo", label: "Redo", icon: Redo2, run: redo, disabled: !canRedo },
   ] as const;
 
   if (domain === "motion") {
@@ -322,6 +373,93 @@ export function PresetBar() {
             <Redo2 className="size-3.5" aria-hidden />
             Redo
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (domain === "drive") {
+    return (
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {DRIVE_PRESET_ORDER.map((kind) => {
+            const on = drivePreset === kind;
+            return (
+              <Button
+                key={kind}
+                variant={on ? "solid" : "outline"}
+                size="sm"
+                className={cn("h-10 min-w-16 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
+                onClick={() => applyDrivePreset(kind)}
+                aria-pressed={on}
+              >
+                <MiniTransfer kind={kind} active={on} />
+                <span className="font-mono text-[10px] uppercase tracking-wider">
+                  {DRIVE_PRESET_LABEL[kind]}
+                </span>
+              </Button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {fxActions.map((action) => (
+            <Button
+              key={action.id}
+              variant="subtle"
+              size="sm"
+              onClick={action.run}
+              disabled={action.disabled}
+              className="h-8 px-2 sm:h-9"
+            >
+              <action.icon className="size-3.5" aria-hidden />
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (domain === "chorus") {
+    return (
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {CHORUS_PRESET_ORDER.map((kind: ChorusPreset) => {
+            const on = chorusPreset === kind;
+            return (
+              <Button
+                key={kind}
+                variant={on ? "solid" : "outline"}
+                size="sm"
+                className={cn(
+                  "h-10 min-w-14 px-2 font-mono text-[10px] uppercase tracking-wider",
+                  on && "text-active-ink",
+                )}
+                onClick={() => applyChorusPreset(kind)}
+                aria-pressed={on}
+              >
+                <span className="mr-1 text-base leading-none">
+                  {kind === "sine" ? "∿" : kind === "triangle" ? "⌁" : kind === "rise" ? "↗" : "⌇"}
+                </span>
+                {CHORUS_PRESET_LABEL[kind]}
+              </Button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {fxActions.map((action) => (
+            <Button
+              key={action.id}
+              variant="subtle"
+              size="sm"
+              onClick={action.run}
+              disabled={action.disabled}
+              className="h-8 px-2 sm:h-9"
+            >
+              <action.icon className="size-3.5" aria-hidden />
+              {action.label}
+            </Button>
+          ))}
         </div>
       </div>
     );
@@ -429,7 +567,11 @@ export function HeaderBar() {
               ? "Draw the space"
               : domain === "motion"
                 ? "Draw the motion"
-                : "Draw the cycle"}
+                : domain === "drive"
+                  ? "Draw the drive"
+                  : domain === "chorus"
+                    ? "Draw the chorus"
+                    : "Draw the cycle"}
           </p>
         </div>
         <TreatmentSelector />
