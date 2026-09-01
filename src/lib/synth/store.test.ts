@@ -72,6 +72,13 @@ function startMotion() {
 describe("MOTION store authority", () => {
   beforeEach(resetStore);
 
+  it("starts optional effects with conservative audition defaults", () => {
+    const state = useSynthStore.getState();
+    assert.equal(state.chorusMix, 0);
+    assert.equal(state.driveSafe, true);
+    assert.equal(state.driveAmount, 0.25);
+  });
+
   it("does not start playback without both A and B", () => {
     const wave = generatePreset("sine");
     const slotCases = [
@@ -300,17 +307,22 @@ describe("MOTION store authority", () => {
 
   it("allows DRIVE and CHORUS operations without stopping playback", () => {
     armMorph();
-    startMotion();
+    const runId = startMotion();
 
     const driveBefore = generateDrivePreset("identity");
     const driveAfter = generateDrivePreset("hard");
     useSynthStore.getState().setLiveDrive(driveAfter);
     useSynthStore.getState().finishDriveGesture(driveBefore, driveAfter);
     useSynthStore.getState().applyDrivePreset("soft");
+    useSynthStore.getState().setDriveAmount(0.2);
+    assert.equal(useSynthStore.getState().motionPlaying, true);
+    useSynthStore.getState().setDriveSafe(false);
+    assert.equal(useSynthStore.getState().motionPlaying, true);
     useSynthStore.getState().setDomain("drive");
     useSynthStore.getState().undo();
     useSynthStore.getState().redo();
     assert.equal(useSynthStore.getState().motionPlaying, true);
+    assert.equal(useSynthStore.getState().motionRunId, runId);
 
     const chorusBefore = generateChorusPreset("sine");
     const chorusAfter = generateChorusPreset("triangle");
@@ -431,6 +443,84 @@ describe("editor history isolation", () => {
       assert.deepEqual(historySizes(), expected);
     }
     assert.equal(useSynthStore.getState().spaceSeconds, 2.7);
+  });
+});
+
+describe("DRIVE audition parameters", () => {
+  beforeEach(resetStore);
+
+  it("caps SAFE Amount and leaves the current Amount unchanged when SAFE is disabled", () => {
+    let state = useSynthStore.getState();
+    assert.equal(state.driveSafe, true);
+    assert.equal(state.driveAmount, 0.25);
+
+    state.setDriveAmount(1);
+    state = useSynthStore.getState();
+    assert.equal(state.driveAmount, 0.25);
+
+    state.setDriveSafe(false);
+    state = useSynthStore.getState();
+    assert.equal(state.driveSafe, false);
+    assert.equal(state.driveAmount, 0.25);
+
+    state.setDriveAmount(0.8);
+    assert.equal(useSynthStore.getState().driveAmount, 0.8);
+    useSynthStore.getState().setDriveSafe(true);
+    state = useSynthStore.getState();
+    assert.equal(state.driveSafe, true);
+    assert.equal(state.driveAmount, 0.25);
+  });
+
+  it("does not put Amount or SAFE in any authored history", () => {
+    useSynthStore.getState().setDomain("drive");
+    useSynthStore.getState().applyDrivePreset("hard");
+    useSynthStore.getState().undo();
+
+    const before = useSynthStore.getState();
+    assert.equal(before.drivePreset, "identity");
+    assert.equal(before.driveFuture.length, 1);
+    const authored = before.driveCurve;
+    const hasDrawn = before.driveHasDrawn;
+    const histories = {
+      cyclePast: before.past,
+      cycleFuture: before.future,
+      motionPast: before.motionPast,
+      motionFuture: before.motionFuture,
+      drivePast: before.drivePast,
+      driveFuture: before.driveFuture,
+      chorusPast: before.chorusPast,
+      chorusFuture: before.chorusFuture,
+      spacePast: before.spacePast,
+      spaceFuture: before.spaceFuture,
+    };
+
+    before.setDriveSafe(false);
+    useSynthStore.getState().setDriveAmount(0.8);
+    useSynthStore.getState().setDriveSafe(true);
+    useSynthStore.getState().setDriveSafe(false);
+    useSynthStore.getState().setDriveAmount(0.8);
+
+    let state = useSynthStore.getState();
+    assert.strictEqual(state.driveCurve, authored);
+    assert.equal(state.drivePreset, "identity");
+    assert.equal(state.driveHasDrawn, hasDrawn);
+    assert.strictEqual(state.past, histories.cyclePast);
+    assert.strictEqual(state.future, histories.cycleFuture);
+    assert.strictEqual(state.motionPast, histories.motionPast);
+    assert.strictEqual(state.motionFuture, histories.motionFuture);
+    assert.strictEqual(state.drivePast, histories.drivePast);
+    assert.strictEqual(state.driveFuture, histories.driveFuture);
+    assert.strictEqual(state.chorusPast, histories.chorusPast);
+    assert.strictEqual(state.chorusFuture, histories.chorusFuture);
+    assert.strictEqual(state.spacePast, histories.spacePast);
+    assert.strictEqual(state.spaceFuture, histories.spaceFuture);
+
+    state.redo();
+    state = useSynthStore.getState();
+    assert.equal(state.drivePreset, "hard");
+    assert.deepEqual(state.driveCurve, generateDrivePreset("hard"));
+    assert.equal(state.driveSafe, false);
+    assert.equal(state.driveAmount, 0.8);
   });
 });
 

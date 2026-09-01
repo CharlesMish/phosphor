@@ -22,6 +22,10 @@ import {
   type SpacePreset,
 } from "./space";
 import {
+  DRIVE_DEFAULT_AMOUNT,
+  DRIVE_DEFAULT_SAFE,
+  DRIVE_SAFE_MAX_AMOUNT,
+  clampDriveAmount,
   cloneTransfer,
   generateDrivePreset,
   identifyDrivePreset,
@@ -104,6 +108,8 @@ type SynthState = {
   future: number[][];
   driveCurve: number[];
   drivePreset: DrivePreset | "custom";
+  driveAmount: number;
+  driveSafe: boolean;
   driveHasDrawn: boolean;
   drivePast: DriveSnap[];
   driveFuture: DriveSnap[];
@@ -161,6 +167,8 @@ type SynthActions = {
   setLiveDrive: (curve: number[]) => void;
   finishDriveGesture: (before: number[], after: number[]) => void;
   applyDrivePreset: (preset: DrivePreset) => void;
+  setDriveAmount: (amount: number) => void;
+  setDriveSafe: (safe: boolean) => void;
   setLiveChorus: (curve: number[]) => void;
   finishChorusGesture: (before: number[], after: number[]) => void;
   applyChorusPreset: (preset: ChorusPreset) => void;
@@ -243,8 +251,13 @@ function applySpace(contour: number[], seed: number, metal: boolean, seconds: nu
   synth.setSpace(contour, seed, metal, seconds);
 }
 
-function applyDrive(curve: number[]) {
-  synth.setDriveCurve(curve);
+function applyDrive(
+  curve: number[],
+  amount: number,
+  safe: boolean,
+  smoothAmount = false,
+) {
+  synth.setDriveState(curve, amount, safe, smoothAmount);
 }
 
 export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
@@ -305,13 +318,15 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   future: [],
   driveCurve: initialDriveCurve,
   drivePreset: "identity",
+  driveAmount: DRIVE_DEFAULT_AMOUNT,
+  driveSafe: DRIVE_DEFAULT_SAFE,
   driveHasDrawn: false,
   drivePast: [],
   driveFuture: [],
   chorusCurve: initialChorusCurve,
   chorusPreset: "sine",
   chorusPeriod: CHORUS_DEFAULT_PERIOD,
-  chorusMix: 0.62,
+  chorusMix: 0,
   chorusPast: [],
   chorusFuture: [],
   spaceContour: initialContour,
@@ -331,16 +346,17 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   setLiveDrive: (curve) => {
+    const { driveAmount, driveSafe } = get();
     set({
       driveCurve: curve,
       drivePreset: "custom",
       driveHasDrawn: true,
     });
-    applyDrive(curve);
+    applyDrive(curve, driveAmount, driveSafe);
   },
 
   finishDriveGesture: (before, after) => {
-    const { drivePast } = get();
+    const { drivePast, driveAmount, driveSafe } = get();
     const changed = transfersDiffer(before, after);
     set({
       driveCurve: after,
@@ -356,15 +372,15 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
           }
         : {}),
     });
-    applyDrive(after);
+    applyDrive(after, driveAmount, driveSafe);
   },
 
   applyDrivePreset: (preset) => {
-    const { driveCurve, drivePreset, drivePast } = get();
+    const { driveCurve, drivePreset, drivePast, driveAmount, driveSafe } = get();
     const next = generateDrivePreset(preset);
     if (!transfersDiffer(driveCurve, next) && drivePreset === preset) {
       set({ drivePreset: preset, driveHasDrawn: true });
-      applyDrive(next);
+      applyDrive(next, driveAmount, driveSafe);
       return;
     }
     set({
@@ -377,7 +393,30 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
       }),
       driveFuture: [],
     });
-    applyDrive(next);
+    applyDrive(next, driveAmount, driveSafe);
+  },
+
+  setDriveAmount: (amount) => {
+    const { driveCurve, driveSafe } = get();
+    const clamped = clampDriveAmount(amount);
+    const next = driveSafe
+      ? Math.min(DRIVE_SAFE_MAX_AMOUNT, clamped)
+      : clamped;
+    set({ driveAmount: next });
+    applyDrive(driveCurve, next, driveSafe);
+    synth.unlock();
+  },
+
+  setDriveSafe: (safe) => {
+    const state = get();
+    const nextAmount = safe
+      ? Math.min(DRIVE_SAFE_MAX_AMOUNT, state.driveAmount)
+      : state.driveAmount;
+    const smoothClamp =
+      safe && !state.driveSafe && state.driveAmount > DRIVE_SAFE_MAX_AMOUNT;
+    set({ driveSafe: safe, driveAmount: nextAmount });
+    applyDrive(state.driveCurve, nextAmount, safe, smoothClamp);
+    synth.unlock();
   },
 
   setLiveChorus: (curve) => {
@@ -706,7 +745,14 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
       return;
     }
     if (get().domain === "drive") {
-      const { drivePast, driveCurve, drivePreset, driveFuture } = get();
+      const {
+        drivePast,
+        driveCurve,
+        drivePreset,
+        driveFuture,
+        driveAmount,
+        driveSafe,
+      } = get();
       const prev = drivePast[drivePast.length - 1];
       if (!prev) return;
       set({
@@ -718,7 +764,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
           { curve: cloneTransfer(driveCurve), preset: drivePreset },
         ],
       });
-      applyDrive(prev.curve);
+      applyDrive(prev.curve, driveAmount, driveSafe);
       return;
     }
     if (get().domain === "chorus") {
@@ -799,7 +845,14 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
       return;
     }
     if (get().domain === "drive") {
-      const { driveFuture, driveCurve, drivePreset, drivePast } = get();
+      const {
+        driveFuture,
+        driveCurve,
+        drivePreset,
+        drivePast,
+        driveAmount,
+        driveSafe,
+      } = get();
       const next = driveFuture[driveFuture.length - 1];
       if (!next) return;
       set({
@@ -811,7 +864,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
           preset: drivePreset,
         }),
       });
-      applyDrive(next.curve);
+      applyDrive(next.curve, driveAmount, driveSafe);
       return;
     }
     if (get().domain === "chorus") {
@@ -890,9 +943,13 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
 });
 
 synth.setWaveform(cloneWave(initialSamples), true);
-synth.setDriveCurve(cloneTransfer(initialDriveCurve));
+synth.setDriveState(
+  cloneTransfer(initialDriveCurve),
+  DRIVE_DEFAULT_AMOUNT,
+  DRIVE_DEFAULT_SAFE,
+);
 synth.setChorusCurve(cloneChorusCurve(initialChorusCurve));
 synth.setChorusPeriod(CHORUS_DEFAULT_PERIOD);
-synth.setChorusMix(0.62);
+synth.setChorusMix(0);
 synth.setSpace(cloneContour(initialContour), initialSeed, false, SPACE_DEFAULT_SECONDS);
 synth.setSpaceMix(INITIAL_SPACE_MIX);

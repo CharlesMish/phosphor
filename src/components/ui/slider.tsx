@@ -22,6 +22,7 @@ export const Slider = React.forwardRef<
     <SliderPrimitive.Thumb
       className="block size-4 rounded-full bg-fg shadow-border transition-[box-shadow,transform] duration-150 ease-out hover:shadow-border-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/50 active:scale-95"
       aria-label={props["aria-label"]}
+      aria-valuetext={props["aria-valuetext"]}
     />
   </SliderPrimitive.Root>
 ));

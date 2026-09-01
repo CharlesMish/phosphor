@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   DRIVE_CURVE_SIZE,
+  DRIVE_DEFAULT_AMOUNT,
+  DRIVE_DEFAULT_SAFE,
+  DRIVE_SAFE_MAX_AMOUNT,
+  buildAppliedDriveCurve,
   buildDriveCurve,
+  clampDriveAmount,
+  driveGuardGain,
+  effectiveDriveAmount,
   generateDrivePreset,
   sampleTransfer,
 } from "./drive.ts";
@@ -19,7 +26,11 @@ import { generateSpaceContour } from "./space.ts";
 class TestAudioParam {
   value = 0;
   readonly setValueCalls: number[] = [];
-  readonly targetCalls: Array<{ prior: number; value: number }> = [];
+  readonly targetCalls: Array<{
+    prior: number;
+    value: number;
+    timeConstant: number;
+  }> = [];
 
   setValueAtTime(value: number) {
     this.setValueCalls.push(value);
@@ -37,8 +48,8 @@ class TestAudioParam {
     return this;
   }
 
-  setTargetAtTime(value: number) {
-    this.targetCalls.push({ prior: this.value, value });
+  setTargetAtTime(value: number, _startTime?: number, timeConstant = 0) {
+    this.targetCalls.push({ prior: this.value, value, timeConstant });
     this.value = value;
     return this;
   }
@@ -81,8 +92,18 @@ class TestFilterNode extends TestAudioNode {
 }
 
 class TestWaveShaperNode extends TestAudioNode {
-  curve: Float32Array<ArrayBuffer> | null = null;
+  private currentCurve: Float32Array<ArrayBuffer> | null = null;
+  readonly curveAssignments: Float32Array<ArrayBuffer>[] = [];
   oversample: OverSampleType = "none";
+
+  get curve() {
+    return this.currentCurve;
+  }
+
+  set curve(curve: Float32Array<ArrayBuffer> | null) {
+    this.currentCurve = curve;
+    if (curve) this.curveAssignments.push(new Float32Array(curve));
+  }
 }
 
 class TestConvolverNode extends TestAudioNode {
@@ -324,6 +345,88 @@ describe("DRIVE transfer curve", () => {
   });
 });
 
+describe("DRIVE conservative audition", () => {
+  it("defines the conservative Amount and SAFE defaults", () => {
+    assert.equal(DRIVE_DEFAULT_AMOUNT, 0.25);
+    assert.equal(DRIVE_DEFAULT_SAFE, true);
+    assert.equal(DRIVE_SAFE_MAX_AMOUNT, 0.25);
+  });
+
+  it("clamps Amount to its physical range and SAFE to its audition ceiling", () => {
+    assert.equal(clampDriveAmount(-0.2), 0);
+    assert.equal(clampDriveAmount(0.4), 0.4);
+    assert.equal(clampDriveAmount(1.2), 1);
+    assert.equal(effectiveDriveAmount(0.9, true), DRIVE_SAFE_MAX_AMOUNT);
+    assert.equal(effectiveDriveAmount(0.9, false), 0.9);
+  });
+
+  it("makes zero Amount exact identity regardless of the authored transfer", () => {
+    const identity = buildDriveCurve(generateDrivePreset("identity"));
+    for (const preset of ["soft", "hard", "asym"] as const) {
+      assert.deepEqual(
+        buildAppliedDriveCurve(generateDrivePreset(preset), 0),
+        identity,
+      );
+    }
+
+    const custom = generateDrivePreset("hard");
+    custom[Math.floor(custom.length / 2)] = 0.73;
+    assert.deepEqual(buildAppliedDriveCurve(custom, 0), identity);
+  });
+
+  it("makes full Amount exactly the authored transfer", () => {
+    for (const preset of ["identity", "soft", "hard", "asym"] as const) {
+      const authored = generateDrivePreset(preset);
+      assert.deepEqual(
+        buildAppliedDriveCurve(authored, 1),
+        buildDriveCurve(authored),
+      );
+    }
+  });
+
+  it("keeps authored Identity exact at every Amount", () => {
+    const authored = generateDrivePreset("identity");
+    const identity = buildDriveCurve(authored);
+    for (const amount of [0, 0.123, 0.25, 0.73, 1]) {
+      assert.deepEqual(buildAppliedDriveCurve(authored, amount), identity);
+    }
+  });
+
+  it("uses an attenuation-only deterministic RMS guard", () => {
+    const identity = buildAppliedDriveCurve(generateDrivePreset("identity"), 0.25);
+    assert.equal(driveGuardGain(identity, true), 1);
+
+    const quiet = buildAppliedDriveCurve(new Array(257).fill(0), 1);
+    assert.equal(driveGuardGain(quiet, true), 1, "the guard must not add makeup gain");
+
+    const hard = buildAppliedDriveCurve(generateDrivePreset("hard"), 0.25);
+    const hardGuard = driveGuardGain(hard, true);
+    assert.ok(hardGuard > 0 && hardGuard < 1, `${hardGuard}`);
+    assert.equal(driveGuardGain(hard, false), 1);
+
+    let identityEnergy = 0;
+    let effectiveEnergy = 0;
+    for (let i = 0; i < hard.length; i++) {
+      const input = (i / (hard.length - 1)) * 2 - 1;
+      identityEnergy += input * input;
+      effectiveEnergy += (hard[i] ?? 0) ** 2;
+    }
+    const expected = Math.min(1, Math.sqrt(identityEnergy / effectiveEnergy));
+    assert.ok(Math.abs(hardGuard - expected) < 1e-12);
+
+    for (const preset of ["identity", "soft", "hard", "asym"] as const) {
+      for (const amount of [0, 0.1, 0.25, 0.7, 1]) {
+        const gain = driveGuardGain(
+          buildAppliedDriveCurve(generateDrivePreset(preset), amount),
+          true,
+        );
+        assert.ok(Number.isFinite(gain));
+        assert.ok(gain > 0 && gain <= 1, `${preset} ${amount}: ${gain}`);
+      }
+    }
+  });
+});
+
 describe("DRIVE history", () => {
   it("records one gesture as one isolated undo/redo step", () => {
     const before = generateDrivePreset("identity");
@@ -403,16 +506,24 @@ describe("combined live audio graph", () => {
       assert.ok(safety);
       assert.ok(lowPass);
       assert.ok(dcBlock);
+      assert.equal(context.shapers.length, 2, "one musical DRIVE plus final safety");
       assert.notEqual(drive, safety);
       assert.equal(lowPass.type, "lowpass");
+      assert.equal(lowPass.connections.length, 1);
       assert.equal(lowPass.connections[0], drive);
       assert.equal(drive.oversample, DRIVE_OVERSAMPLE);
+      assert.equal(drive.connections.length, 1, "DRIVE must not use a parallel dry path");
       assert.equal(drive.connections[0], dcBlock);
       assert.equal(dcBlock.type, "highpass");
       assert.equal(dcBlock.frequency.value, DRIVE_DC_BLOCK_HZ);
       assert.equal(dcBlock.Q.value, Math.SQRT1_2);
+      assert.equal(dcBlock.connections.length, 1);
 
-      const sharedBus = dcBlock.connections[0];
+      const driveGuard = dcBlock.connections[0];
+      assert.ok(driveGuard instanceof TestGainNode);
+      assert.equal(driveGuard.connections.length, 1);
+      assert.equal(driveGuard.gain.value, 1);
+      const sharedBus = driveGuard.connections[0];
       assert.ok(sharedBus instanceof TestGainNode);
       assert.equal(sharedBus.connections.length, 3);
 
@@ -454,9 +565,11 @@ describe("combined live audio graph", () => {
       assert.equal(wetA.connections[0], spaceSum);
       assert.equal(wetB.connections[0], spaceSum);
 
-      const initialChorusMix = chorusMixGains(0.62);
+      const initialChorusMix = chorusMixGains(0);
       assert.equal(chorusDry.gain.targetCalls[0]?.prior, initialChorusMix.dry);
       assert.equal(chorusWet.gain.targetCalls[0]?.prior, initialChorusMix.wet);
+      assert.equal(chorusDry.gain.value, 1, "CHORUS must launch fully dry");
+      assert.equal(chorusWet.gain.value, 0, "CHORUS must launch with no wet signal");
       const initialSpaceAngle = 0.38 * (Math.PI / 2);
       assert.equal(spaceDry.gain.targetCalls[0]?.prior, Math.cos(initialSpaceAngle));
       assert.equal(spaceWetIn.gain.targetCalls[0]?.prior, Math.sin(initialSpaceAngle));
@@ -510,8 +623,95 @@ describe("combined live audio graph", () => {
 
       const hard = generateDrivePreset("hard");
       engine.setDriveCurve(hard);
-      assert.equal(drive.curve?.[Math.floor(DRIVE_CURVE_SIZE * 0.75)], 1);
+      const probeIndex = Math.floor(DRIVE_CURVE_SIZE * 0.75);
+      assert.equal(drive.curve?.[probeIndex], 0.625);
+      assert.deepEqual(
+        drive.curve,
+        buildAppliedDriveCurve(hard, DRIVE_DEFAULT_AMOUNT),
+      );
+      const defaultGuardTarget = driveGuard.gain.targetCalls.at(-1);
+      assert.ok(defaultGuardTarget);
+      assert.ok(defaultGuardTarget.value < 1);
+      assert.ok(defaultGuardTarget.timeConstant > 0);
       assert.equal(context.oscillators.length, 3, "DRIVE must not replace a held oscillator");
+
+      const safeAppliedCurve = drive.curve;
+      engine.setDriveState(hard, DRIVE_DEFAULT_AMOUNT, false);
+      assert.deepEqual(
+        drive.curve,
+        safeAppliedCurve,
+        "disabling SAFE must leave the settled Amount unchanged",
+      );
+      assert.equal(driveGuard.gain.targetCalls.at(-1)?.value, 1);
+
+      engine.setDriveState(hard, 1, false);
+      assert.deepEqual(drive.curve, buildDriveCurve(hard));
+      assert.equal(driveGuard.gain.targetCalls.at(-1)?.value, 1);
+      assert.ok((driveGuard.gain.targetCalls.at(-1)?.timeConstant ?? 0) > 0);
+
+      engine.setDriveState(hard, 0, false);
+      assert.deepEqual(
+        drive.curve,
+        buildDriveCurve(generateDrivePreset("identity")),
+      );
+      engine.setDriveState(generateDrivePreset("identity"), 0.73, false);
+      assert.deepEqual(
+        drive.curve,
+        buildDriveCurve(generateDrivePreset("identity")),
+      );
+
+      engine.setDriveState(hard, 1, false);
+      const assignmentsBeforeClamp = drive.curveAssignments.length;
+      const guardCallsBeforeClamp = driveGuard.gain.targetCalls.length;
+      engine.setDriveState(hard, DRIVE_DEFAULT_AMOUNT, true, true);
+      const clampTimers = [...timers.entries()];
+      assert.ok(clampTimers.length > 1, "SAFE clamp should use intermediate curves");
+      let previousProbe = drive.curve?.[probeIndex] ?? 0;
+      for (const [id, callback] of clampTimers) {
+        timers.delete(id);
+        callback();
+        const nextProbe = drive.curve?.[probeIndex] ?? 0;
+        assert.ok(nextProbe <= previousProbe);
+        assert.ok(nextProbe >= 0.625);
+        previousProbe = nextProbe;
+      }
+      assert.ok(drive.curveAssignments.length > assignmentsBeforeClamp + 1);
+      assert.deepEqual(
+        drive.curve,
+        buildAppliedDriveCurve(hard, DRIVE_DEFAULT_AMOUNT),
+      );
+      const clampGuardCalls = driveGuard.gain.targetCalls.slice(guardCallsBeforeClamp);
+      assert.ok(clampGuardCalls.length > 1);
+      assert.ok(clampGuardCalls.every((call) => call.value <= 1));
+      assert.ok((clampGuardCalls.at(-1)?.value ?? 1) < 1);
+
+      engine.setDriveState(hard, 1, false);
+      engine.setDriveState(hard, DRIVE_DEFAULT_AMOUNT, true, true);
+      const interruptedTimers = [...timers.entries()];
+      for (const [id, callback] of interruptedTimers.slice(0, 4)) {
+        timers.delete(id);
+        callback();
+      }
+      const probeBeforeDisable = drive.curve?.[probeIndex];
+      engine.setDriveState(hard, DRIVE_DEFAULT_AMOUNT, false);
+      assert.equal(
+        drive.curve?.[probeIndex],
+        probeBeforeDisable,
+        "disabling SAFE mid-clamp must continue rather than jump",
+      );
+      assert.equal(driveGuard.gain.targetCalls.at(-1)?.value, 1);
+      for (const [id] of interruptedTimers) assert.equal(timers.has(id), false);
+      const continuedTimers = [...timers.entries()];
+      assert.ok(continuedTimers.length > 1);
+      for (const [id, callback] of continuedTimers) {
+        timers.delete(id);
+        callback();
+      }
+      assert.deepEqual(
+        drive.curve,
+        buildAppliedDriveCurve(hard, DRIVE_DEFAULT_AMOUNT),
+      );
+
       engine.setChorusCurve(generateChorusPreset("wild"));
       assert.equal(context.oscillators.length, 3, "CHORUS must update its LFOs in place");
       assert.ok(context.oscillators[0]?.wave);
@@ -566,12 +766,18 @@ describe("combined live audio graph", () => {
       assert.deepEqual(voiceEvents.at(-1), [60]);
       assert.equal(safety.curve, safetyCurve, "musical DRIVE must not replace final safety");
 
+      engine.setDriveState(hard, 1, false);
+      engine.setDriveState(hard, DRIVE_DEFAULT_AMOUNT, true, true);
+      const pendingDriveTimers = new Set(timers.keys());
+      assert.ok(pendingDriveTimers.size > 1);
+
       engine.noteOff(60);
       assert.deepEqual(voiceEvents.at(-1), []);
       const timerCallsBeforeWave = timerCalls;
       engine.setWaveform(generatePreset("triangle"), false);
       assert.equal(timerCalls, timerCallsBeforeWave + 1);
       engine.dispose();
+      for (const id of pendingDriveTimers) assert.equal(timers.has(id), false);
       assert.equal(context.closed, true);
       assert.deepEqual(readyEvents, [true, false]);
       assert.ok(context.oscillators[0]?.stopped);

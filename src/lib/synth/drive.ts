@@ -4,6 +4,15 @@ export const DRIVE_SIZE = 257;
 /** Dense transfer table handed directly to WaveShaperNode. */
 export const DRIVE_CURVE_SIZE = 2049;
 
+/** Conservative first-launch audition strength. */
+export const DRIVE_DEFAULT_AMOUNT = 0.25;
+
+/** SAFE is deliberately engaged for a new session. */
+export const DRIVE_DEFAULT_SAFE = true;
+
+/** SAFE never applies more than one quarter of the authored transfer delta. */
+export const DRIVE_SAFE_MAX_AMOUNT = 0.25;
+
 export type DrivePreset = "identity" | "soft" | "hard" | "asym";
 
 export const DRIVE_PRESET_ORDER: DrivePreset[] = [
@@ -62,6 +71,73 @@ export function buildDriveCurve(
     out[i] = sampleTransfer(authored, input);
   }
   return out;
+}
+
+export function clampDriveAmount(amount: number): number {
+  if (!Number.isFinite(amount)) return 0;
+  return Math.min(1, Math.max(0, amount));
+}
+
+export function effectiveDriveAmount(amount: number, safe: boolean): number {
+  const clamped = clampDriveAmount(amount);
+  return safe ? Math.min(DRIVE_SAFE_MAX_AMOUNT, clamped) : clamped;
+}
+
+/**
+ * Dense table for the transfer the player actually hears:
+ * `x + amount * (authored(x) - x)`.
+ *
+ * The endpoint branches intentionally preserve exact identity and exact authored
+ * Float32 tables rather than asking floating-point interpolation to approximate
+ * either promise.
+ */
+export function buildAppliedDriveCurve(
+  authored: ArrayLike<number>,
+  amount: number,
+  size = DRIVE_CURVE_SIZE,
+): Float32Array<ArrayBuffer> {
+  const identity = buildDriveCurve([], size);
+  const a = clampDriveAmount(amount);
+  if (a === 0) return identity;
+
+  const target = buildDriveCurve(authored, size);
+  if (a === 1) return target;
+
+  const out = new Float32Array(identity.length);
+  for (let i = 0; i < out.length; i++) {
+    const x = identity[i] ?? 0;
+    out[i] = x + a * ((target[i] ?? x) - x);
+  }
+  return out;
+}
+
+/**
+ * Attenuation-only SAFE guard.
+ *
+ * Both RMS values use the same deterministic, uniformly spaced input probes
+ * represented by the effective WaveShaper table, including both endpoints.
+ * With energies `E = sum(y[i]^2)`, the result is
+ * `min(1, sqrt(identityE / effectiveE))`. Identity is the unity reference;
+ * quieter transfers receive no makeup gain.
+ */
+export function driveGuardGain(
+  effectiveCurve: ArrayLike<number>,
+  safe = true,
+): number {
+  if (!safe) return 1;
+  const n = Math.max(2, effectiveCurve.length);
+  let effectivePower = 0;
+  let identityPower = 0;
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const output = clampTransfer(effectiveCurve[i] ?? x);
+    effectivePower += output * output;
+    identityPower += x * x;
+  }
+  const effectiveRms = Math.sqrt(effectivePower / n);
+  const identityRms = Math.sqrt(identityPower / n);
+  if (!(effectiveRms > identityRms)) return 1;
+  return Math.min(1, identityRms / effectiveRms);
 }
 
 export function generateDrivePreset(kind: DrivePreset): number[] {

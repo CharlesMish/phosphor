@@ -11,7 +11,11 @@ import {
   buildSpaceView,
   sampleContour,
 } from "@/lib/synth/space";
-import { DRIVE_SIZE } from "@/lib/synth/drive";
+import {
+  DRIVE_SIZE,
+  buildAppliedDriveCurve,
+  effectiveDriveAmount,
+} from "@/lib/synth/drive";
 import {
   CHORUS_MAX_MS,
   CHORUS_MIN_MS,
@@ -82,6 +86,8 @@ export function WaveformEditor() {
   const { treatment } = useTreatment();
   const samples = useSynthStore((s) => s.samples);
   const driveCurve = useSynthStore((s) => s.driveCurve);
+  const driveAmount = useSynthStore((s) => s.driveAmount);
+  const driveSafe = useSynthStore((s) => s.driveSafe);
   const chorusCurve = useSynthStore((s) => s.chorusCurve);
   const spaceContour = useSynthStore((s) => s.spaceContour);
   const spaceView = useSynthStore((s) => s.spaceView);
@@ -104,6 +110,8 @@ export function WaveformEditor() {
 
   const liveRef = useRef<number[]>(samples);
   const driveRef = useRef<number[]>(driveCurve);
+  const driveAmountRef = useRef(driveAmount);
+  const driveSafeRef = useRef(driveSafe);
   const chorusRef = useRef<number[]>(chorusCurve);
   const contourRef = useRef<number[]>(spaceContour);
   const viewRef = useRef<number[]>(spaceView);
@@ -116,6 +124,8 @@ export function WaveformEditor() {
   const originRef = useRef<number[] | null>(null);
 
   domainRef.current = domain;
+  driveAmountRef.current = driveAmount;
+  driveSafeRef.current = driveSafe;
   if (!drawingRef.current) {
     liveRef.current = samples;
     driveRef.current = driveCurve;
@@ -239,6 +249,10 @@ export function WaveformEditor() {
       const curve = driveRef.current;
       const n = curve.length || DRIVE_SIZE;
       const xAt = (i: number) => padX + (i / Math.max(1, n - 1)) * innerW;
+      const appliedAmount = effectiveDriveAmount(
+        driveAmountRef.current,
+        driveSafeRef.current,
+      );
 
       ctx.strokeStyle = tokens.axis;
       ctx.beginPath();
@@ -258,6 +272,25 @@ export function WaveformEditor() {
       ctx.lineTo(padX + innerW, yAt(1));
       ctx.stroke();
       ctx.restore();
+
+      if (appliedAmount < 1) {
+        const applied = buildAppliedDriveCurve(curve, appliedAmount, n);
+        ctx.save();
+        ctx.globalAlpha = tokens.ghostAlpha;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.strokeStyle = tokens.traceSecondary;
+        ctx.lineWidth = tokens.ghostWidth;
+        ctx.beginPath();
+        for (let i = 0; i < applied.length; i++) {
+          const x = xAt(i);
+          const y = yAt(applied[i] ?? 0);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
 
       ctx.save();
       ctx.lineJoin = "round";
@@ -431,6 +464,8 @@ export function WaveformEditor() {
   useEffect(() => {
     liveRef.current = samples;
     driveRef.current = driveCurve;
+    driveAmountRef.current = driveAmount;
+    driveSafeRef.current = driveSafe;
     chorusRef.current = chorusCurve;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
@@ -440,6 +475,8 @@ export function WaveformEditor() {
   }, [
     samples,
     driveCurve,
+    driveAmount,
+    driveSafe,
     chorusCurve,
     spaceContour,
     spaceView,
@@ -632,10 +669,12 @@ export function WaveformEditor() {
   const space = domain === "space";
   const drive = domain === "drive";
   const chorus = domain === "chorus";
+  const appliedDriveAmount = effectiveDriveAmount(driveAmount, driveSafe);
+  const appliedDrivePercent = Math.round(appliedDriveAmount * 100);
   const title = space
     ? "Space · impulse response"
     : drive
-      ? "Drive · transfer function"
+      ? "Drive · authored transfer"
       : chorus
         ? "Chorus · delay-time cycle"
         : `Oscillator · ${morphArmed && !morphLive ? "custom" : "1 cycle"}`;
@@ -654,7 +693,7 @@ export function WaveformEditor() {
           {space
             ? `0 s → ${spaceSeconds.toFixed(1)} s`
             : drive
-              ? "input → output"
+              ? `${driveSafe ? "SAFE" : "SAFE OFF"} · ${appliedDrivePercent}%`
               : chorus
                 ? `${CHORUS_MIN_MS} ↔ ${CHORUS_MAX_MS} ms`
                 : "−1 ↔ +1"}
@@ -671,7 +710,9 @@ export function WaveformEditor() {
           space
             ? "Draw space impulse response"
             : drive
-              ? "Draw drive transfer function"
+              ? appliedDriveAmount < 1
+                ? `Draw authored drive transfer function. Secondary trace shows ${appliedDrivePercent}% applied; Safe mode ${driveSafe ? "on" : "off"}.`
+                : "Draw authored drive transfer function. The authored transfer is fully applied; Safe mode off."
               : chorus
                 ? "Draw chorus delay-time modulation"
                 : "Draw oscillator waveform"
