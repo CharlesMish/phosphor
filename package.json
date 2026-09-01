@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "lab": "node scripts/lab.mjs",
+    "lab:list": "node scripts/lab.mjs --list",
     "dev": "vite --host 0.0.0.0 --port 8080",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8081",
