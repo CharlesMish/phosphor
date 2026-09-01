@@ -16,6 +16,9 @@ const WAVE_THROTTLE_MS = 32;
 const MIN_ATTACK = 0.004;
 const MIN_RELEASE = 0.03;
 
+export const DRIVE_DC_BLOCK_HZ = 10;
+export const DRIVE_OVERSAMPLE: OverSampleType = "4x";
+
 type SpaceSpec = { contour: number[]; seed: number; metal: boolean };
 
 type Voice = {
@@ -76,6 +79,7 @@ export class SynthEngine {
   private ctx: AudioContext | null = null;
   private filter: BiquadFilterNode | null = null;
   private drive: WaveShaperNode | null = null;
+  private driveDcBlock: BiquadFilterNode | null = null;
   private bus: GainNode | null = null;
   private master: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
@@ -291,7 +295,12 @@ export class SynthEngine {
 
     const drive = ctx.createWaveShaper();
     drive.curve = this.driveCurve;
-    drive.oversample = "none";
+    drive.oversample = DRIVE_OVERSAMPLE;
+
+    const driveDcBlock = ctx.createBiquadFilter();
+    driveDcBlock.type = "highpass";
+    driveDcBlock.frequency.value = DRIVE_DC_BLOCK_HZ;
+    driveDcBlock.Q.value = Math.SQRT1_2;
 
     const dryGain = ctx.createGain();
     const wetIn = ctx.createGain();
@@ -327,7 +336,8 @@ export class SynthEngine {
     analyser.smoothingTimeConstant = 0.1;
 
     filter.connect(drive);
-    drive.connect(bus);
+    drive.connect(driveDcBlock);
+    driveDcBlock.connect(bus);
     bus.connect(dryGain);
     bus.connect(wetIn);
     wetIn.connect(convA);
@@ -345,6 +355,7 @@ export class SynthEngine {
 
     this.filter = filter;
     this.drive = drive;
+    this.driveDcBlock = driveDcBlock;
     this.bus = bus;
     this.dryGain = dryGain;
     this.wetIn = wetIn;

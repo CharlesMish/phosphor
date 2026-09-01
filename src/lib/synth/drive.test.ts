@@ -6,7 +6,11 @@ import {
   generateDrivePreset,
   sampleTransfer,
 } from "./drive.ts";
-import { SynthEngine } from "./engine.ts";
+import {
+  DRIVE_DC_BLOCK_HZ,
+  DRIVE_OVERSAMPLE,
+  SynthEngine,
+} from "./engine.ts";
 import { useSynthStore } from "./store.ts";
 import { generatePreset } from "./waveform.ts";
 
@@ -125,6 +129,7 @@ class TestAudioContext {
   readonly destination = new TestAudioNode();
   readonly filters: TestFilterNode[] = [];
   readonly shapers: TestWaveShaperNode[] = [];
+  readonly convolvers: TestConvolverNode[] = [];
   readonly oscillators: TestOscillatorNode[] = [];
 
   constructor() {
@@ -148,7 +153,9 @@ class TestAudioContext {
   }
 
   createConvolver() {
-    return new TestConvolverNode();
+    const node = new TestConvolverNode();
+    this.convolvers.push(node);
+    return node;
   }
 
   createAnalyser() {
@@ -212,8 +219,15 @@ describe("DRIVE transfer curve", () => {
     const curve = buildDriveCurve(authored);
     const negative = sampleTransfer(curve, -0.5);
     const positive = sampleTransfer(curve, 0.5);
-    assert.ok(Math.abs(positive + negative) > 0.08, `${negative}, ${positive}`);
-    assert.ok(sampleTransfer(curve, 0) > 0.05);
+    assert.ok(Math.abs(positive + negative) > 0.1, `${negative}, ${positive}`);
+    assert.ok(Math.abs(sampleTransfer(curve, 0)) < 1e-12);
+  });
+
+  it("does not force an authored zero-input offset back to zero", () => {
+    const authored = generateDrivePreset("identity");
+    authored[Math.floor(authored.length / 2)] = 0.37;
+    const curve = buildDriveCurve(authored);
+    assert.ok(Math.abs(sampleTransfer(curve, 0) - 0.37) < 1e-6);
   });
 });
 
@@ -280,13 +294,32 @@ describe("DRIVE live audio graph", () => {
       assert.ok(context);
       const drive = context.shapers[0];
       const safety = context.shapers[1];
+      const lowPass = context.filters[0];
+      const dcBlock = context.filters[1];
       assert.ok(drive);
       assert.ok(safety);
-      assert.equal(context.filters[0]?.connections[0], drive);
-      assert.equal(drive.connections[0]?.connections.length, 2);
+      assert.ok(lowPass);
+      assert.ok(dcBlock);
+      assert.notEqual(drive, safety);
+      assert.equal(lowPass.type, "lowpass");
+      assert.equal(lowPass.connections[0], drive);
+      assert.equal(drive.oversample, DRIVE_OVERSAMPLE);
+      assert.equal(drive.connections[0], dcBlock);
+      assert.equal(dcBlock.type, "highpass");
+      assert.equal(dcBlock.frequency.value, DRIVE_DC_BLOCK_HZ);
+      assert.equal(dcBlock.Q.value, Math.SQRT1_2);
+
+      const sharedBus = dcBlock.connections[0];
+      assert.ok(sharedBus);
+      assert.equal(sharedBus.connections.length, 2);
+      const spaceWetIn = sharedBus.connections[1];
+      assert.ok(spaceWetIn);
+      assert.equal(spaceWetIn.connections[0], context.convolvers[0]);
+      assert.equal(spaceWetIn.connections[1], context.convolvers[1]);
       assert.equal(drive.curve?.length, DRIVE_CURVE_SIZE);
       const safetyCurve = safety.curve;
       assert.equal(safetyCurve?.length, 65537);
+      assert.equal(safety.oversample, "none");
       assert.deepEqual(voiceEvents.at(-1), [60]);
       assert.equal(context.oscillators.length, 1);
 

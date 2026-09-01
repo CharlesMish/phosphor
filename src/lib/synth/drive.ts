@@ -79,10 +79,11 @@ export function generateDrivePreset(kind: DrivePreset): number[] {
         out[i] = clampTransfer(x * 5.5);
         break;
       case "asym": {
-        // Different positive/negative knees make this intentionally non-odd.
+        // Different positive/negative knees make this intentionally non-odd
+        // while a silent input still maps to silence.
         const amount = x < 0 ? 2.8 : 1.35;
         const shaped = Math.tanh(amount * x) / Math.tanh(amount);
-        out[i] = clampTransfer(shaped + 0.08 * (1 - x * x));
+        out[i] = clampTransfer(shaped);
         break;
       }
     }
