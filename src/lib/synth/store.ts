@@ -20,11 +20,18 @@ import {
   type SpacePreset,
 } from "./space";
 import {
+  DEFAULT_MOTION_BEATS,
+  DEFAULT_MOTION_BPM,
+  DEFAULT_MOTION_MODE,
+  MOTION_BEAT_LENGTHS,
+  clampMotionBpm,
   cloneMotionPath,
   complementMotionPath,
   createDefaultMotionPath,
   motionPathsDiffer,
   sampleMotionPath,
+  type MotionBeats,
+  type MotionMode,
 } from "./motion";
 
 export type { WavePreset, SpacePreset };
@@ -61,6 +68,9 @@ type SynthState = {
   motionPlaying: boolean;
   motionProgress: number;
   motionRunId: number;
+  motionBpm: number;
+  motionBeats: MotionBeats;
+  motionMode: MotionMode;
   motionPast: number[][];
   motionFuture: number[][];
   past: number[][];
@@ -98,6 +108,9 @@ type SynthActions = {
   finishMotionGesture: (before: number[], after: number[]) => void;
   playMotion: () => void;
   stopMotion: () => void;
+  setMotionBpm: (bpm: number) => void;
+  setMotionBeats: (beats: MotionBeats) => void;
+  setMotionMode: (mode: MotionMode) => void;
   setMotionPlaybackPosition: (
     t: number,
     progress: number,
@@ -210,6 +223,9 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   motionPlaying: false,
   motionProgress: 0,
   motionRunId: 0,
+  motionBpm: DEFAULT_MOTION_BPM,
+  motionBeats: DEFAULT_MOTION_BEATS,
+  motionMode: DEFAULT_MOTION_MODE,
   motionPast: [],
   motionFuture: [],
   past: [],
@@ -355,6 +371,12 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   stopMotion: () => set({ motionPlaying: false }),
+
+  setMotionBpm: (bpm) => set({ motionBpm: clampMotionBpm(bpm) }),
+  setMotionBeats: (beats) => {
+    if (MOTION_BEAT_LENGTHS.includes(beats)) set({ motionBeats: beats });
+  },
+  setMotionMode: (mode) => set({ motionMode: mode }),
 
   setMotionPlaybackPosition: (t, progress, complete, runId) => {
     const state = get();

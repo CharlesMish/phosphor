@@ -5,7 +5,11 @@ import {
 } from "@/lib/presentation/canvas-tokens";
 import { useTreatment } from "@/lib/presentation/treatment";
 import { synth } from "@/lib/synth/engine";
-import { MOTION_SECONDS, MOTION_SIZE, sampleMotionPath } from "@/lib/synth/motion";
+import {
+  MOTION_SIZE,
+  motionDurationSeconds,
+  sampleMotionPath,
+} from "@/lib/synth/motion";
 import { useSynthStore } from "@/lib/synth/store";
 import { EditorTabs } from "./editor-tabs";
 
@@ -14,6 +18,10 @@ const PAD_Y = 40;
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
+}
+
+function formatSeconds(seconds: number) {
+  return `${Number(seconds.toFixed(2))} s`;
 }
 
 function drawPlotGrid(
@@ -60,6 +68,8 @@ export function MotionEditor() {
   const motionPath = useSynthStore((s) => s.motionPath);
   const motionPlaying = useSynthStore((s) => s.motionPlaying);
   const motionProgress = useSynthStore((s) => s.motionProgress);
+  const motionBpm = useSynthStore((s) => s.motionBpm);
+  const motionBeats = useSynthStore((s) => s.motionBeats);
   const armed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
   const setLiveMotionPath = useSynthStore((s) => s.setLiveMotionPath);
   const finishMotionGesture = useSynthStore((s) => s.finishMotionGesture);
@@ -70,6 +80,7 @@ export function MotionEditor() {
   const armedRef = useRef(armed);
   const playingRef = useRef(motionPlaying);
   const progressRef = useRef(motionProgress);
+  const durationRef = useRef(motionDurationSeconds(motionBpm, motionBeats));
   const drawingRef = useRef(false);
   const lastIndexRef = useRef<number | null>(null);
   const lastValueRef = useRef<number | null>(null);
@@ -78,6 +89,7 @@ export function MotionEditor() {
   armedRef.current = armed;
   playingRef.current = motionPlaying;
   progressRef.current = motionProgress;
+  durationRef.current = motionDurationSeconds(motionBpm, motionBeats);
   if (!drawingRef.current) pathRef.current = motionPath;
 
   const paint = useCallback(() => {
@@ -159,7 +171,7 @@ export function MotionEditor() {
     ctx.textBaseline = "top";
     ctx.fillText("0 s", PAD_X, PAD_Y + innerH + 8);
     ctx.textAlign = "right";
-    ctx.fillText(`${MOTION_SECONDS.toFixed(0)} s`, PAD_X + innerW, PAD_Y + innerH + 8);
+    ctx.fillText(formatSeconds(durationRef.current), PAD_X + innerW, PAD_Y + innerH + 8);
   }, []);
 
   useEffect(() => {
@@ -167,8 +179,9 @@ export function MotionEditor() {
     armedRef.current = armed;
     playingRef.current = motionPlaying;
     progressRef.current = motionProgress;
+    durationRef.current = motionDurationSeconds(motionBpm, motionBeats);
     paint();
-  }, [motionPath, armed, motionPlaying, motionProgress, paint]);
+  }, [motionPath, armed, motionPlaying, motionProgress, motionBpm, motionBeats, paint]);
 
   useEffect(() => {
     paint();
@@ -274,7 +287,8 @@ export function MotionEditor() {
           </span>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
-          A ↗ B · {MOTION_SECONDS.toFixed(0)} s
+          {motionBeats} {motionBeats === 1 ? "beat" : "beats"} ·{" "}
+          {formatSeconds(motionDurationSeconds(motionBpm, motionBeats))}
         </span>
       </div>
       <canvas

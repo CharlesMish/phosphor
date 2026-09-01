@@ -15,11 +15,17 @@ export function MotionPlaybackController() {
 
   useEffect(() => {
     if (!playing) return;
-    const path = useSynthStore.getState().motionPath.slice();
+    const state = useSynthStore.getState();
+    const path = state.motionPath.slice();
+    const timing = {
+      bpm: state.motionBpm,
+      beats: state.motionBeats,
+      mode: state.motionMode,
+    } as const;
     const startedAt = clockSeconds();
 
     const tick = () => {
-      const frame = motionFrameAtTime(path, clockSeconds() - startedAt);
+      const frame = motionFrameAtTime(path, clockSeconds() - startedAt, timing);
       useSynthStore
         .getState()
         .setMotionPlaybackPosition(frame.position, frame.progress, frame.complete, runId);

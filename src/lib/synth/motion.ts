@@ -1,8 +1,29 @@
 /** Drawing points for the normalized A/B motion trajectory. */
 export const MOTION_SIZE = 512;
 
-/** Fixed one-shot duration for MOTION v0. */
-export const MOTION_SECONDS = 4;
+export const MOTION_BPM_MIN = 40;
+export const MOTION_BPM_MAX = 240;
+export const DEFAULT_MOTION_BPM = 120;
+
+export const MOTION_BEAT_LENGTHS = [1, 2, 4, 8] as const;
+export type MotionBeats = (typeof MOTION_BEAT_LENGTHS)[number];
+export const DEFAULT_MOTION_BEATS: MotionBeats = 4;
+
+export const MOTION_MODES = ["one-shot", "loop", "ping-pong"] as const;
+export type MotionMode = (typeof MOTION_MODES)[number];
+export const DEFAULT_MOTION_MODE: MotionMode = "one-shot";
+
+export type MotionTiming = Readonly<{
+  bpm: number;
+  beats: MotionBeats;
+  mode: MotionMode;
+}>;
+
+export const DEFAULT_MOTION_TIMING: MotionTiming = {
+  bpm: DEFAULT_MOTION_BPM,
+  beats: DEFAULT_MOTION_BEATS,
+  mode: DEFAULT_MOTION_MODE,
+};
 
 export type MotionFrame = {
   progress: number;
@@ -12,6 +33,19 @@ export type MotionFrame = {
 
 export function clampMotionValue(value: number): number {
   return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
+}
+
+export function clampMotionBpm(value: number): number {
+  const bpm = Number.isFinite(value) ? value : DEFAULT_MOTION_BPM;
+  return Math.min(MOTION_BPM_MAX, Math.max(MOTION_BPM_MIN, bpm));
+}
+
+export function beatDurationSeconds(bpm: number): number {
+  return 60 / clampMotionBpm(bpm);
+}
+
+export function motionDurationSeconds(bpm: number, beats: MotionBeats): number {
+  return beatDurationSeconds(bpm) * beats;
 }
 
 export function createDefaultMotionPath(size = MOTION_SIZE): number[] {
@@ -48,18 +82,32 @@ export function sampleMotionPath(path: number[], t01: number): number {
 export function motionFrameAtTime(
   path: number[],
   elapsedSeconds: number,
-  durationSeconds = MOTION_SECONDS,
+  timing: MotionTiming = DEFAULT_MOTION_TIMING,
 ): MotionFrame {
-  const duration =
-    Number.isFinite(durationSeconds) && durationSeconds > 0
-      ? durationSeconds
-      : MOTION_SECONDS;
+  const duration = motionDurationSeconds(timing.bpm, timing.beats);
   const elapsed = Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0;
-  const progress = clampMotionValue(elapsed / duration);
+  const cycle = elapsed / duration;
+
+  if (timing.mode === "one-shot") {
+    const progress = clampMotionValue(cycle);
+    return {
+      progress,
+      position: sampleMotionPath(path, progress),
+      complete: elapsed >= duration,
+    };
+  }
+
+  const phase = cycle - Math.floor(cycle);
+  const progress =
+    timing.mode === "ping-pong"
+      ? phase <= 0.5
+        ? phase * 2
+        : (1 - phase) * 2
+      : phase;
   return {
     progress,
     position: sampleMotionPath(path, progress),
-    complete: elapsed >= duration,
+    complete: false,
   };
 }
 

@@ -6,7 +6,7 @@ Phosphor is a browser instrument built around directly manipulating DSP structur
 
 - **CYCLE** — draw one oscillator period; the drawing becomes a Web Audio `PeriodicWave`.
 - **A/B Morph** — capture two cycles and continuously interpolate between them while notes are held.
-- **MOTION** — draw a four-second, one-shot A/B morph trajectory and audition it live.
+- **MOTION** — draw a BPM-synchronized A/B morph trajectory and audition it live.
 - **SPACE** — draw the macro energy contour of a finite impulse response; deterministic microstructure underneath it becomes the actual convolution IR.
 - **Figurestead treatments** — change the rendering of the instrument without changing its sound or state.
 

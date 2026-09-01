@@ -25,7 +25,14 @@ import {
   contourToPath,
 } from "@/lib/synth/space";
 import { rangeLabel } from "@/lib/synth/keyboard-map";
-import { MOTION_SECONDS } from "@/lib/synth/motion";
+import {
+  MOTION_BEAT_LENGTHS,
+  MOTION_BPM_MAX,
+  MOTION_BPM_MIN,
+  MOTION_MODES,
+  type MotionBeats,
+  type MotionMode,
+} from "@/lib/synth/motion";
 import { cn } from "@/lib/utils";
 
 function MiniWave({ kind, active }: { kind: WavePreset; active: boolean }) {
@@ -179,6 +186,12 @@ export function PresetBar() {
   const motionArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
   const playMotion = useSynthStore((s) => s.playMotion);
   const stopMotion = useSynthStore((s) => s.stopMotion);
+  const motionBpm = useSynthStore((s) => s.motionBpm);
+  const motionBeats = useSynthStore((s) => s.motionBeats);
+  const motionMode = useSynthStore((s) => s.motionMode);
+  const setMotionBpm = useSynthStore((s) => s.setMotionBpm);
+  const setMotionBeats = useSynthStore((s) => s.setMotionBeats);
+  const setMotionMode = useSynthStore((s) => s.setMotionMode);
   const canUndo = useSynthStore((s) =>
     s.domain === "space"
       ? s.spacePast.length > 0
@@ -214,9 +227,59 @@ export function PresetBar() {
   if (domain === "motion") {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
-          {MOTION_SECONDS.toFixed(0)} s · one shot
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            <span>BPM</span>
+            <input
+              type="number"
+              min={MOTION_BPM_MIN}
+              max={MOTION_BPM_MAX}
+              step={1}
+              value={motionBpm}
+              disabled={motionPlaying}
+              onChange={(event) => {
+                const next = event.currentTarget.valueAsNumber;
+                if (Number.isFinite(next)) setMotionBpm(next);
+              }}
+              className="h-9 w-16 rounded-md bg-surface-2 px-2 text-center text-xs tabular-nums text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+              aria-label="Motion BPM"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            <span>Length</span>
+            <select
+              value={motionBeats}
+              disabled={motionPlaying}
+              onChange={(event) =>
+                setMotionBeats(Number(event.currentTarget.value) as MotionBeats)
+              }
+              className="h-9 rounded-md bg-surface-2 px-2 text-xs text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+              aria-label="Motion length"
+            >
+              {MOTION_BEAT_LENGTHS.map((beats) => (
+                <option key={beats} value={beats}>
+                  {beats} {beats === 1 ? "beat" : "beats"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            <span>Mode</span>
+            <select
+              value={motionMode}
+              disabled={motionPlaying}
+              onChange={(event) => setMotionMode(event.currentTarget.value as MotionMode)}
+              className="h-9 rounded-md bg-surface-2 px-2 text-xs text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+              aria-label="Motion mode"
+            >
+              {MOTION_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode === "one-shot" ? "One-shot" : mode === "ping-pong" ? "Ping-pong" : "Loop"}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div className="flex flex-wrap gap-1.5">
           <Button
             variant={motionPlaying ? "solid" : "outline"}

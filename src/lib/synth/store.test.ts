@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
-import { createDefaultMotionPath } from "./motion.ts";
+import {
+  DEFAULT_MOTION_BEATS,
+  DEFAULT_MOTION_BPM,
+  DEFAULT_MOTION_MODE,
+  createDefaultMotionPath,
+} from "./motion.ts";
 import { generateSpaceContour } from "./space.ts";
 import { useSynthStore } from "./store.ts";
 import { generatePreset } from "./waveform.ts";
@@ -20,6 +25,9 @@ function resetStore() {
       motionPlaying: false,
       motionProgress: 0,
       motionRunId: 0,
+      motionBpm: DEFAULT_MOTION_BPM,
+      motionBeats: DEFAULT_MOTION_BEATS,
+      motionMode: DEFAULT_MOTION_MODE,
       motionPast: [],
       motionFuture: [],
       spaceContour: initialState.spaceContour.slice(),
@@ -304,11 +312,15 @@ describe("MOTION store authority", () => {
     assert.strictEqual(after.samples, before.samples);
   });
 
-  it("assigns a new run id when playback is retriggered", () => {
+  it("restarts from the beginning with a new run id when retriggered", () => {
     armMorph();
     const first = startMotion();
+    useSynthStore.getState().setMotionPlaybackPosition(0.7, 0.6, false, first);
     useSynthStore.getState().playMotion();
-    assert.ok(useSynthStore.getState().motionRunId > first);
+    const state = useSynthStore.getState();
+    assert.ok(state.motionRunId > first);
+    assert.equal(state.motionProgress, 0);
+    assert.equal(state.morph, state.motionPath[0]);
   });
 });
 
