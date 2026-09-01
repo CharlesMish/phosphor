@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  SPACE_DEFAULT_SECONDS,
   SPACE_IR_PEAK_LIMIT,
   SPACE_IR_TARGET_L2,
+  SPACE_MAX_SECONDS,
+  SPACE_MIN_SECONDS,
   SPACE_SIZE,
   buildSpaceBuffer,
+  clampSpaceSeconds,
   generateSpaceContour,
   metalModeFrequencies,
   normalizeIrPair,
@@ -15,6 +19,9 @@ import {
   OUTPUT_SAFETY_THRESHOLD,
   buildOutputSafetyCurve,
 } from "./safety.ts";
+
+const TEST_DURATIONS = [1.0, 1.6, 3.0] as const;
+const TEST_SAMPLE_RATES = [44100, 48000, 96000] as const;
 
 class TestAudioBuffer {
   readonly numberOfChannels: number;
@@ -104,6 +111,40 @@ function stereoSineGain(buffer: AudioBuffer, frequency: number): number {
 }
 
 describe("SPACE impulse-response gain", () => {
+  it("defaults to exactly 1.6 seconds and clamps to the selectable range", () => {
+    assert.equal(SPACE_DEFAULT_SECONDS, 1.6);
+    assert.equal(SPACE_MIN_SECONDS, 1.0);
+    assert.equal(SPACE_MAX_SECONDS, 3.0);
+    assert.equal(clampSpaceSeconds(0), 1.0);
+    assert.equal(clampSpaceSeconds(1.0), 1.0);
+    assert.equal(clampSpaceSeconds(3.0), 3.0);
+    assert.equal(clampSpaceSeconds(4), 3.0);
+  });
+
+  it("uses the selected duration for buffer length at common sample rates", () => {
+    const contour = generateSpaceContour("room");
+    assert.equal(
+      buildSpaceBuffer(contour, 0xc0ffee, testContext(48000)).length,
+      48000 * SPACE_DEFAULT_SECONDS,
+    );
+    for (const sampleRate of TEST_SAMPLE_RATES) {
+      for (const seconds of TEST_DURATIONS) {
+        const buffer = buildSpaceBuffer(
+          contour,
+          0xc0ffee,
+          testContext(sampleRate),
+          false,
+          seconds,
+        );
+        assert.equal(
+          buffer.length,
+          Math.round(sampleRate * seconds),
+          `${seconds} s @ ${sampleRate} Hz`,
+        );
+      }
+    }
+  });
+
   it("uses one shared stereo L2 factor", () => {
     const left = new Float32Array([3, 0]);
     const right = new Float32Array([0, 4]);
@@ -129,29 +170,41 @@ describe("SPACE impulse-response gain", () => {
       ["flat", new Array<number>(SPACE_SIZE).fill(1), false],
     ];
 
-    for (const sampleRate of [44100, 48000, 96000]) {
-      for (const [name, contour, metal] of contours) {
-        const buffer = buildSpaceBuffer(contour, 0xc0ffee, testContext(sampleRate), metal);
-        const metrics = pairMetrics(buffer);
-        assert.ok(
-          Math.abs(metrics.l2 - SPACE_IR_TARGET_L2) < 5e-5,
-          `${name} @ ${sampleRate} Hz L2=${metrics.l2}`,
-        );
-        assert.ok(
-          metrics.peak <= SPACE_IR_PEAK_LIMIT + 1e-6,
-          `${name} @ ${sampleRate} Hz peak=${metrics.peak}`,
-        );
+    for (const sampleRate of TEST_SAMPLE_RATES) {
+      for (const seconds of TEST_DURATIONS) {
+        for (const [name, contour, metal] of contours) {
+          const buffer = buildSpaceBuffer(
+            contour,
+            0xc0ffee,
+            testContext(sampleRate),
+            metal,
+            seconds,
+          );
+          const metrics = pairMetrics(buffer);
+          assert.ok(
+            Math.abs(metrics.l2 - SPACE_IR_TARGET_L2) < 5e-5,
+            `${name}, ${seconds} s @ ${sampleRate} Hz L2=${metrics.l2}`,
+          );
+          assert.ok(
+            metrics.peak <= SPACE_IR_PEAK_LIMIT + 1e-6,
+            `${name}, ${seconds} s @ ${sampleRate} Hz peak=${metrics.peak}`,
+          );
+        }
       }
     }
   });
 
   it("leaves a zero contour silent and finite", () => {
-    const buffer = buildSpaceBuffer(
-      new Array<number>(SPACE_SIZE).fill(0),
-      123,
-      testContext(48000),
-    );
-    assert.deepEqual(pairMetrics(buffer), { l2: 0, peak: 0, centroid: 0 });
+    for (const seconds of TEST_DURATIONS) {
+      const buffer = buildSpaceBuffer(
+        new Array<number>(SPACE_SIZE).fill(0),
+        123,
+        testContext(48000),
+        false,
+        seconds,
+      );
+      assert.deepEqual(pairMetrics(buffer), { l2: 0, peak: 0, centroid: 0 });
+    }
   });
 });
 
@@ -185,31 +238,52 @@ describe("SPACE response identity", () => {
   it("is deterministic while Scatter changes the microstructure", () => {
     const ctx = testContext(48000);
     const contour = generateSpaceContour("long");
-    const first = buildSpaceBuffer(contour, 0xc0ffee, ctx);
-    const repeat = buildSpaceBuffer(contour, 0xc0ffee, ctx);
-    const scattered = buildSpaceBuffer(contour, 0x9f3879a7, ctx);
+    for (const seconds of TEST_DURATIONS) {
+      const first = buildSpaceBuffer(contour, 0xc0ffee, ctx, false, seconds);
+      const repeat = buildSpaceBuffer(contour, 0xc0ffee, ctx, false, seconds);
+      const scattered = buildSpaceBuffer(contour, 0x9f3879a7, ctx, false, seconds);
 
-    assert.deepEqual(first.getChannelData(0), repeat.getChannelData(0));
-    assert.deepEqual(first.getChannelData(1), repeat.getChannelData(1));
-    assert.ok(Math.abs(pairCosine(first, scattered)) < 0.03);
-    assert.ok(Math.abs(pairMetrics(scattered).l2 - SPACE_IR_TARGET_L2) < 5e-5);
+      assert.deepEqual(first.getChannelData(0), repeat.getChannelData(0));
+      assert.deepEqual(first.getChannelData(1), repeat.getChannelData(1));
+      assert.ok(Math.abs(pairCosine(first, scattered)) < 0.03);
+      assert.ok(Math.abs(pairMetrics(scattered).l2 - SPACE_IR_TARGET_L2) < 5e-5);
+    }
+  });
+
+  it("stretches preset events with normalized time without mutating the contour", () => {
+    const ctx = testContext(48000);
+    const contour = generateSpaceContour("echo");
+    const authored = contour.slice();
+    const normalizedCentroids = TEST_DURATIONS.map((seconds) => {
+      const buffer = buildSpaceBuffer(contour, 0xc0ffee, ctx, false, seconds);
+      return pairMetrics(buffer).centroid / seconds;
+    });
+
+    assert.deepEqual(contour, authored);
+    const spread = Math.max(...normalizedCentroids) - Math.min(...normalizedCentroids);
+    assert.ok(spread < 0.003, `normalized Echo centroids=${normalizedCentroids.join(", ")}`);
   });
 
   it("keeps Metal resonant without exceptional narrowband gain", () => {
     const ctx = testContext(48000);
     const contour = generateSpaceContour("metal");
     const seeds = [0xc0ffee, 0x9f3879a7, 0x3d6ff360];
-    const maxima = seeds.map((seed) => {
-      const buffer = buildSpaceBuffer(contour, seed, ctx, true);
-      return Math.max(
-        ...metalModeFrequencies(seed).map((frequency) =>
-          stereoSineGain(buffer, frequency),
-        ),
-      );
-    });
+    for (const seconds of TEST_DURATIONS) {
+      const maxima = seeds.map((seed) => {
+        const buffer = buildSpaceBuffer(contour, seed, ctx, true, seconds);
+        return Math.max(
+          ...metalModeFrequencies(seed).map((frequency) =>
+            stereoSineGain(buffer, frequency),
+          ),
+        );
+      });
 
-    assert.ok(maxima[0]! > 1.1, `initial Metal resonance=${maxima[0]}`);
-    assert.ok(Math.max(...maxima) < 3.2, `Metal resonance maxima=${maxima.join(", ")}`);
+      assert.ok(maxima[0]! > 1.1, `${seconds} s initial Metal resonance=${maxima[0]}`);
+      assert.ok(
+        Math.max(...maxima) < 3.2,
+        `${seconds} s Metal resonance maxima=${maxima.join(", ")}`,
+      );
+    }
   });
 });
 

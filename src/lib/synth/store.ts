@@ -13,7 +13,9 @@ import {
 } from "./waveform";
 import {
   INITIAL_SPACE_SEED,
+  SPACE_DEFAULT_SECONDS,
   buildSpaceView,
+  clampSpaceSeconds,
   cloneContour,
   contoursDiffer,
   generateSpaceContour,
@@ -59,6 +61,7 @@ type SynthState = {
   /** Metal modes are processing state, independent of whether the contour is still the preset shape. */
   spaceMetal: boolean;
   spaceMix: number;
+  spaceSeconds: number;
   spaceHasDrawn: boolean;
   spacePast: SpaceSnap[];
   spaceFuture: SpaceSnap[];
@@ -87,6 +90,8 @@ type SynthActions = {
   applySpacePreset: (preset: SpacePreset) => void;
   scatterSpace: () => void;
   setSpaceMix: (mix: number) => void;
+  setSpaceLength: (seconds: number) => void;
+  commitSpaceLength: (seconds: number) => void;
   setParam: (key: keyof SynthParams, value: number) => void;
   setOctave: (octave: number) => void;
   setActiveNotes: (notes: number[]) => void;
@@ -126,8 +131,8 @@ function morphSamples(slotA: number[], slotB: number[], t: number): number[] {
   return normalizeWave(lerpWaves(slotA, slotB, u), 0.92);
 }
 
-function applySpace(contour: number[], seed: number, metal: boolean) {
-  synth.setSpace(contour, seed, metal);
+function applySpace(contour: number[], seed: number, metal: boolean, seconds: number) {
+  synth.setSpace(contour, seed, metal, seconds);
 }
 
 export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
@@ -154,6 +159,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   spacePreset: "room",
   spaceMetal: false,
   spaceMix: INITIAL_SPACE_MIX,
+  spaceSeconds: SPACE_DEFAULT_SECONDS,
   spaceHasDrawn: false,
   spacePast: [],
   spaceFuture: [],
@@ -263,7 +269,8 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   },
 
   finishSpaceGesture: (before, after) => {
-    const { spaceSeed, spacePreset, spaceMetal, spacePast } = get();
+    const { spaceSeed, spacePreset, spaceMetal, spacePast, spaceSeconds } =
+      get();
     const changed = contoursDiffer(before, after);
     set({
       spaceContour: after,
@@ -285,16 +292,23 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
     // Editing changes the contour identity to custom, not the processing identity.
     // A Metal-derived space therefore keeps its modal resonators until the user
     // explicitly chooses a non-Metal preset.
-    applySpace(after, spaceSeed, spaceMetal);
+    applySpace(after, spaceSeed, spaceMetal, spaceSeconds);
   },
 
   applySpacePreset: (preset) => {
-    const { spaceContour, spaceSeed, spacePreset, spaceMetal, spacePast } = get();
+    const {
+      spaceContour,
+      spaceSeed,
+      spacePreset,
+      spaceMetal,
+      spacePast,
+      spaceSeconds,
+    } = get();
     const next = generateSpaceContour(preset);
     const nextMetal = preset === "metal";
     if (!contoursDiffer(spaceContour, next) && spacePreset === preset) {
       set({ spacePreset: preset, spaceMetal: nextMetal, spaceHasDrawn: true });
-      applySpace(next, spaceSeed, nextMetal);
+      applySpace(next, spaceSeed, nextMetal, spaceSeconds);
       return;
     }
     set({
@@ -311,11 +325,18 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       }),
       spaceFuture: [],
     });
-    applySpace(next, spaceSeed, nextMetal);
+    applySpace(next, spaceSeed, nextMetal, spaceSeconds);
   },
 
   scatterSpace: () => {
-    const { spaceContour, spaceSeed, spacePreset, spaceMetal, spacePast } = get();
+    const {
+      spaceContour,
+      spaceSeed,
+      spacePreset,
+      spaceMetal,
+      spacePast,
+      spaceSeconds,
+    } = get();
     const seed = (spaceSeed + 0x9e3779b9) >>> 0 || 1;
     set({
       spaceSeed: seed,
@@ -329,7 +350,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       }),
       spaceFuture: [],
     });
-    applySpace(spaceContour, seed, spaceMetal);
+    applySpace(spaceContour, seed, spaceMetal, spaceSeconds);
   },
 
   setSpaceMix: (mix) => {
@@ -337,6 +358,18 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
     set({ spaceMix: next });
     synth.setSpaceMix(next);
     synth.unlock();
+  },
+
+  // Length is deliberately absent from SpaceSnap: it is a playback parameter,
+  // not part of authored contour/seed/Metal history.
+  setSpaceLength: (seconds) => {
+    set({ spaceSeconds: clampSpaceSeconds(seconds) });
+  },
+  commitSpaceLength: (seconds) => {
+    const spaceSeconds = clampSpaceSeconds(seconds);
+    const { spaceContour, spaceSeed, spaceMetal } = get();
+    set({ spaceSeconds });
+    applySpace(spaceContour, spaceSeed, spaceMetal, spaceSeconds);
   },
 
   undo: () => {
@@ -348,6 +381,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
         spacePreset,
         spaceMetal,
         spaceFuture,
+        spaceSeconds,
       } = get();
       const prev = spacePast[spacePast.length - 1];
       if (!prev) return;
@@ -368,7 +402,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
           },
         ],
       });
-      applySpace(prev.contour, prev.seed, prev.metal);
+      applySpace(prev.contour, prev.seed, prev.metal, spaceSeconds);
       return;
     }
     const { past, samples, future } = get();
@@ -392,6 +426,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
         spacePreset,
         spaceMetal,
         spacePast,
+        spaceSeconds,
       } = get();
       const next = spaceFuture[spaceFuture.length - 1];
       if (!next) return;
@@ -409,7 +444,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
           metal: spaceMetal,
         }),
       });
-      applySpace(next.contour, next.seed, next.metal);
+      applySpace(next.contour, next.seed, next.metal, spaceSeconds);
       return;
     }
     const { future, samples, past } = get();
@@ -441,5 +476,5 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
 }));
 
 synth.setWaveform(cloneWave(initialSamples), true);
-synth.setSpace(cloneContour(initialContour), initialSeed, false);
+synth.setSpace(cloneContour(initialContour), initialSeed, false, SPACE_DEFAULT_SECONDS);
 synth.setSpaceMix(INITIAL_SPACE_MIX);

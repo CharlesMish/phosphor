@@ -4,8 +4,18 @@ export const SPACE_SIZE = 512;
 /** Display samples of the actual bipolar IR (dense but canvas-cheap). */
 export const SPACE_VIEW = 1536;
 
-/** Finite response length. */
-export const SPACE_SECONDS = 1.6;
+/** Selectable physical duration of the complete normalized drawing domain. */
+export const SPACE_MIN_SECONDS = 1.0;
+export const SPACE_MAX_SECONDS = 3.0;
+export const SPACE_DEFAULT_SECONDS = 1.6;
+export const SPACE_SECONDS_STEP = 0.1;
+/** Original calibration/default, retained for callers that only need the default. */
+export const SPACE_SECONDS = SPACE_DEFAULT_SECONDS;
+
+export function clampSpaceSeconds(seconds: number): number {
+  if (!Number.isFinite(seconds)) return SPACE_DEFAULT_SECONDS;
+  return Math.min(SPACE_MAX_SECONDS, Math.max(SPACE_MIN_SECONDS, seconds));
+}
 
 /**
  * Shared L2 energy for the complete stereo IR.
@@ -94,7 +104,10 @@ function peakOf(contour: number[]): number {
 
 export function generateSpaceContour(kind: SpacePreset): number[] {
   const n = SPACE_SIZE;
-  const T = SPACE_SECONDS;
+  // Presets are authored once in the normalized drawing domain. Their original
+  // 1.6 s calibration defines the shape, but playback stretches/compresses all
+  // contour features (including Echo reflections) over the selected duration.
+  const T = SPACE_DEFAULT_SECONDS;
   const out = new Array<number>(n);
 
   for (let i = 0; i < n; i++) {
@@ -235,6 +248,9 @@ export function metalModeFrequencies(seed: number): number[] {
 
 function addMetalModes(left: Float32Array, right: Float32Array, sr: number, seed: number) {
   const n = left.length;
+  // Modal frequency and decay stay in physical units: they describe the metal
+  // itself, while the authored Metal contour is time-scaled with every other
+  // drawing. Scaling oscillator frequency would change the preset's identity.
   for (const mode of makeMetalModes(seed)) {
     const twoPiF = 2 * Math.PI * mode.frequency;
     for (let i = 0; i < n; i++) {
@@ -254,9 +270,10 @@ export function buildSpaceBuffer(
   seed: number,
   ctx: AudioContext,
   metal = false,
+  seconds = SPACE_DEFAULT_SECONDS,
 ): AudioBuffer {
   const sr = ctx.sampleRate;
-  const n = Math.max(256, Math.floor(sr * SPACE_SECONDS));
+  const n = Math.max(256, Math.round(sr * clampSpaceSeconds(seconds)));
   const left = makeGrain(seed, n);
   const right = makeGrain(seed ^ 0xa53c9e37, n);
   const den = Math.max(1, n - 1);

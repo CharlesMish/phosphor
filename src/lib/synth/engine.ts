@@ -4,7 +4,7 @@ import {
   waveformToCoefficients,
 } from "./waveform";
 import { midiToHz } from "./keyboard-map";
-import { buildSpaceBuffer } from "./space";
+import { SPACE_DEFAULT_SECONDS, buildSpaceBuffer } from "./space";
 import { buildOutputSafetyCurve } from "./safety";
 
 const MAX_VOICES = 12;
@@ -15,7 +15,7 @@ const WAVE_THROTTLE_MS = 32;
 const MIN_ATTACK = 0.004;
 const MIN_RELEASE = 0.03;
 
-type SpaceSpec = { contour: number[]; seed: number; metal: boolean };
+type SpaceSpec = { contour: number[]; seed: number; metal: boolean; seconds: number };
 
 type Voice = {
   midi: number;
@@ -169,8 +169,13 @@ export class SynthEngine {
     this.applyMix();
   }
 
-  setSpace(contour: number[], seed: number, metal = false) {
-    const next = { contour, seed, metal };
+  setSpace(
+    contour: number[],
+    seed: number,
+    metal = false,
+    seconds = SPACE_DEFAULT_SECONDS,
+  ) {
+    const next = { contour, seed, metal, seconds };
     this.space = next;
     this.pendingSpace = next;
     if (!this.ctx) return;
@@ -378,7 +383,13 @@ export class SynthEngine {
       this.spaceTimer = null;
     }
 
-    const buffer = buildSpaceBuffer(pending.contour, pending.seed, this.ctx, pending.metal);
+    const buffer = buildSpaceBuffer(
+      pending.contour,
+      pending.seed,
+      this.ctx,
+      pending.metal,
+      pending.seconds,
+    );
     this.pendingSpace = null;
 
     if (!this.spaceReady) {

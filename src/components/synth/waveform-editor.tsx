@@ -6,12 +6,7 @@ import {
 import { useTreatment } from "@/lib/presentation/treatment";
 import { useSynthStore } from "@/lib/synth/store";
 import { WAVE_SIZE } from "@/lib/synth/waveform";
-import {
-  SPACE_SECONDS,
-  SPACE_SIZE,
-  buildSpaceView,
-  sampleContour,
-} from "@/lib/synth/space";
+import { SPACE_SIZE, buildSpaceView, sampleContour } from "@/lib/synth/space";
 import { synth } from "@/lib/synth/engine";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +68,7 @@ export function WaveformEditor() {
   const samples = useSynthStore((s) => s.samples);
   const spaceContour = useSynthStore((s) => s.spaceContour);
   const spaceView = useSynthStore((s) => s.spaceView);
+  const spaceSeconds = useSynthStore((s) => s.spaceSeconds);
   const hasDrawn = useSynthStore((s) => s.hasDrawn);
   const spaceHasDrawn = useSynthStore((s) => s.spaceHasDrawn);
   const morphLive = useSynthStore((s) => s.morphLive);
@@ -89,6 +85,7 @@ export function WaveformEditor() {
   const contourRef = useRef<number[]>(spaceContour);
   const viewRef = useRef<number[]>(spaceView);
   const domainRef = useRef(domain);
+  const spaceSecondsRef = useRef(spaceSeconds);
   const drawingRef = useRef(false);
   const lastIndexRef = useRef<number | null>(null);
   const originRef = useRef<number[] | null>(null);
@@ -98,6 +95,7 @@ export function WaveformEditor() {
     liveRef.current = samples;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
+    spaceSecondsRef.current = spaceSeconds;
   }
 
   const paint = useCallback(() => {
@@ -207,7 +205,7 @@ export function WaveformEditor() {
       ctx.textBaseline = "top";
       ctx.fillText("0 s", padX, padY + innerH + 8);
       ctx.textAlign = "right";
-      ctx.fillText(`${SPACE_SECONDS.toFixed(1)} s`, padX + innerW, padY + innerH + 8);
+      ctx.fillText(`${spaceSecondsRef.current.toFixed(1)} s`, padX + innerW, padY + innerH + 8);
     } else {
       ctx.strokeStyle = tokens.axis;
       ctx.beginPath();
@@ -298,9 +296,10 @@ export function WaveformEditor() {
     liveRef.current = samples;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
+    spaceSecondsRef.current = spaceSeconds;
     domainRef.current = domain;
     paint();
-  }, [samples, spaceContour, spaceView, domain, paint]);
+  }, [samples, spaceContour, spaceView, spaceSeconds, domain, paint]);
 
   useEffect(() => {
     paint();
@@ -448,7 +447,7 @@ export function WaveformEditor() {
           </span>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
-          {space ? `0 s → ${SPACE_SECONDS.toFixed(1)} s` : "−1 ↔ +1"}
+          {space ? `0 s → ${spaceSeconds.toFixed(1)} s` : "−1 ↔ +1"}
         </span>
       </div>
       <canvas

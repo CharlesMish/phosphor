@@ -14,6 +14,7 @@ import { SpaceBar } from "./space-bar";
 type PhosphorDebug = {
   peak: () => number;
   mix: () => number;
+  length: () => number;
   domain: () => string;
   seed: () => number;
   contour: () => number[];
@@ -45,6 +46,7 @@ export function PhosphorApp() {
     w.__phosphor = {
       peak: () => synth.measurePeak(),
       mix: () => useSynthStore.getState().spaceMix,
+      length: () => useSynthStore.getState().spaceSeconds,
       domain: () => useSynthStore.getState().domain,
       seed: () => useSynthStore.getState().spaceSeed,
       contour: () => useSynthStore.getState().spaceContour.slice(),
