@@ -56,6 +56,73 @@ function startMotion() {
 describe("MOTION store authority", () => {
   beforeEach(resetStore);
 
+  it("does not start playback without both A and B", () => {
+    const wave = generatePreset("sine");
+    const slotCases = [
+      { slotA: null, slotB: null },
+      { slotA: wave.slice(), slotB: null },
+      { slotA: null, slotB: wave.slice() },
+    ];
+
+    for (const slots of slotCases) {
+      resetStore();
+      useSynthStore.setState(slots);
+      const before = useSynthStore.getState();
+      useSynthStore.getState().playMotion();
+      const after = useSynthStore.getState();
+      assert.equal(after.motionPlaying, false);
+      assert.equal(after.motionRunId, before.motionRunId);
+    }
+  });
+
+  it("does not audition or change sound without both A and B", () => {
+    const wave = generatePreset("sine");
+    const slotCases = [
+      { slotA: null, slotB: null },
+      { slotA: wave.slice(), slotB: null },
+      { slotA: null, slotB: wave.slice() },
+    ];
+
+    for (const slots of slotCases) {
+      resetStore();
+      const samples = generatePreset("triangle");
+      useSynthStore.setState({ ...slots, samples, morph: 0.23 });
+      useSynthStore.getState().auditionMotion(0.8, true);
+      const state = useSynthStore.getState();
+      assert.equal(state.morph, 0.23);
+      assert.strictEqual(state.samples, samples);
+    }
+  });
+
+  it("starts playback at the exact first authored position", () => {
+    armMorph();
+    const path = createDefaultMotionPath();
+    path[0] = 0.37;
+    useSynthStore.setState({ motionPath: path, motionProgress: 0.8 });
+
+    useSynthStore.getState().playMotion();
+    const state = useSynthStore.getState();
+    assert.equal(state.morph, path[0]);
+    assert.equal(state.motionProgress, 0);
+    assert.equal(state.motionPlaying, true);
+  });
+
+  it("applies the exact final position and stops on completion", () => {
+    armMorph();
+    const path = createDefaultMotionPath();
+    path[path.length - 1] = 0.83;
+    useSynthStore.setState({ motionPath: path });
+    const runId = startMotion();
+
+    useSynthStore
+      .getState()
+      .setMotionPlaybackPosition(path[path.length - 1]!, 1, true, runId);
+    const state = useSynthStore.getState();
+    assert.equal(state.morph, path[path.length - 1]);
+    assert.equal(state.motionProgress, 1);
+    assert.equal(state.motionPlaying, false);
+  });
+
   it("keeps drawing audition and playback out of CYCLE history", () => {
     armMorph();
     useSynthStore.setState({
@@ -109,6 +176,36 @@ describe("MOTION store authority", () => {
     armMorph();
     startMotion();
     useSynthStore.getState().setLiveSamples(generatePreset("triangle"));
+    assert.equal(useSynthStore.getState().motionPlaying, false);
+  });
+
+  it("stops playback when a CYCLE preset is applied", () => {
+    armMorph();
+    startMotion();
+    useSynthStore.getState().applyPreset("saw");
+    assert.equal(useSynthStore.getState().motionPlaying, false);
+  });
+
+  it("stops playback for CYCLE Undo and Redo", () => {
+    armMorph();
+    useSynthStore.setState({
+      domain: "cycle",
+      past: [generatePreset("triangle")],
+      future: [],
+    });
+    startMotion();
+    useSynthStore.getState().undo();
+    assert.equal(useSynthStore.getState().motionPlaying, false);
+
+    resetStore();
+    armMorph();
+    useSynthStore.setState({
+      domain: "cycle",
+      past: [],
+      future: [generatePreset("saw")],
+    });
+    startMotion();
+    useSynthStore.getState().redo();
     assert.equal(useSynthStore.getState().motionPlaying, false);
   });
 
