@@ -2,10 +2,11 @@ import {
   HARMONIC_COUNT,
   normalizeWave,
   waveformToCoefficients,
-} from "./waveform";
-import { midiToHz } from "./keyboard-map";
-import { buildSpaceBuffer } from "./space";
-import { buildOutputSafetyCurve } from "./safety";
+} from "./waveform.ts";
+import { midiToHz } from "./keyboard-map.ts";
+import { buildSpaceBuffer } from "./space.ts";
+import { buildOutputSafetyCurve } from "./safety.ts";
+import { buildDriveCurve } from "./drive.ts";
 
 const MAX_VOICES = 12;
 const VOICE_GAIN = 0.22;
@@ -74,6 +75,7 @@ function analyserPeak(analyser: AnalyserNode | null): number {
 export class SynthEngine {
   private ctx: AudioContext | null = null;
   private filter: BiquadFilterNode | null = null;
+  private drive: WaveShaperNode | null = null;
   private bus: GainNode | null = null;
   private master: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
@@ -97,6 +99,7 @@ export class SynthEngine {
     cutoff: 1,
   };
   private spaceMix = 0.38;
+  private driveCurve = buildDriveCurve([]);
   private lastWaveAt = 0;
   private pendingSamples: number[] | null = null;
   private space: SpaceSpec | null = null;
@@ -175,6 +178,13 @@ export class SynthEngine {
     this.pendingSpace = next;
     if (!this.ctx) return;
     this.flushSpace();
+  }
+
+  setDriveCurve(authored: number[]) {
+    // Level and DC differences are part of the drawing: do not normalize or
+    // add makeup gain between the authored transfer and the musical shaper.
+    this.driveCurve = buildDriveCurve(authored);
+    if (this.drive) this.drive.curve = this.driveCurve;
   }
 
   setWaveform(samples: number[], immediate = false) {
@@ -279,6 +289,10 @@ export class SynthEngine {
     const bus = ctx.createGain();
     bus.gain.value = 1;
 
+    const drive = ctx.createWaveShaper();
+    drive.curve = this.driveCurve;
+    drive.oversample = "none";
+
     const dryGain = ctx.createGain();
     const wetIn = ctx.createGain();
     const convA = ctx.createConvolver();
@@ -312,7 +326,8 @@ export class SynthEngine {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.1;
 
-    filter.connect(bus);
+    filter.connect(drive);
+    drive.connect(bus);
     bus.connect(dryGain);
     bus.connect(wetIn);
     wetIn.connect(convA);
@@ -329,6 +344,7 @@ export class SynthEngine {
     analyser.connect(ctx.destination);
 
     this.filter = filter;
+    this.drive = drive;
     this.bus = bus;
     this.dryGain = dryGain;
     this.wetIn = wetIn;

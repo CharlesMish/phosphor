@@ -2,7 +2,7 @@ import { Minus, Plus, RotateCcw, Shuffle, Spline, FlipVertical2, Maximize2, Flip
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { TreatmentSelector } from "./treatment-selector";
-import { useSynthStore, type WavePreset, type SpacePreset } from "@/lib/synth/store";
+import { useSynthStore, type WavePreset, type SpacePreset, type DrivePreset } from "@/lib/synth/store";
 import { PRESET_LABEL, PRESET_ORDER, generatePreset } from "@/lib/synth/waveform";
 import {
   SPACE_PRESET_LABEL,
@@ -10,6 +10,12 @@ import {
   generateSpaceContour,
   contourToPath,
 } from "@/lib/synth/space";
+import {
+  DRIVE_PRESET_LABEL,
+  DRIVE_PRESET_ORDER,
+  generateDrivePreset,
+  transferToPath,
+} from "@/lib/synth/drive";
 import { rangeLabel } from "@/lib/synth/keyboard-map";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +63,24 @@ function MiniContour({ kind, active }: { kind: SpacePreset; active: boolean }) {
   const w = 44;
   const h = 16;
   const d = contourToPath(generateSpaceContour(kind), w, h, 12);
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="overflow-visible">
+      <path
+        d={d}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={active ? 1.6 : 1.2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function MiniTransfer({ kind, active }: { kind: DrivePreset; active: boolean }) {
+  const w = 44;
+  const h = 16;
+  const d = transferToPath(generateDrivePreset(kind), w, h, 8);
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="overflow-visible">
       <path
@@ -149,8 +173,10 @@ export function PresetBar() {
   const domain = useSynthStore((s) => s.domain);
   const preset = useSynthStore((s) => s.preset);
   const spacePreset = useSynthStore((s) => s.spacePreset);
+  const drivePreset = useSynthStore((s) => s.drivePreset);
   const applyPreset = useSynthStore((s) => s.applyPreset);
   const applySpacePreset = useSynthStore((s) => s.applySpacePreset);
+  const applyDrivePreset = useSynthStore((s) => s.applyDrivePreset);
   const scatterSpace = useSynthStore((s) => s.scatterSpace);
   const resetWave = useSynthStore((s) => s.resetWave);
   const smooth = useSynthStore((s) => s.smooth);
@@ -161,10 +187,18 @@ export function PresetBar() {
   const undo = useSynthStore((s) => s.undo);
   const redo = useSynthStore((s) => s.redo);
   const canUndo = useSynthStore((s) =>
-    s.domain === "space" ? s.spacePast.length > 0 : s.past.length > 0,
+    s.domain === "space"
+      ? s.spacePast.length > 0
+      : s.domain === "drive"
+        ? s.drivePast.length > 0
+        : s.past.length > 0,
   );
   const canRedo = useSynthStore((s) =>
-    s.domain === "space" ? s.spaceFuture.length > 0 : s.future.length > 0,
+    s.domain === "space"
+      ? s.spaceFuture.length > 0
+      : s.domain === "drive"
+        ? s.driveFuture.length > 0
+        : s.future.length > 0,
   );
 
   const cycleActions = [
@@ -182,6 +216,11 @@ export function PresetBar() {
     { id: "undo", label: "Undo", icon: Undo2, run: undo, disabled: !canUndo },
     { id: "redo", label: "Redo", icon: Redo2, run: redo, disabled: !canRedo },
     { id: "scatter", label: "Scatter", icon: Dices, run: scatterSpace, disabled: false },
+  ] as const;
+
+  const driveActions = [
+    { id: "undo", label: "Undo", icon: Undo2, run: undo, disabled: !canUndo },
+    { id: "redo", label: "Redo", icon: Redo2, run: redo, disabled: !canRedo },
   ] as const;
 
   if (domain === "space") {
@@ -209,6 +248,48 @@ export function PresetBar() {
         </div>
         <div className="flex flex-wrap gap-1.5">
           {spaceActions.map((a) => (
+            <Button
+              key={a.id}
+              variant="subtle"
+              size="sm"
+              onClick={a.run}
+              disabled={a.disabled}
+              className="h-8 px-2 sm:h-9"
+            >
+              <a.icon className="size-3.5" aria-hidden />
+              {a.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (domain === "drive") {
+    return (
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {DRIVE_PRESET_ORDER.map((kind) => {
+            const on = drivePreset === kind;
+            return (
+              <Button
+                key={kind}
+                variant={on ? "solid" : "outline"}
+                size="sm"
+                className={cn("h-10 min-w-16 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
+                onClick={() => applyDrivePreset(kind)}
+                aria-pressed={on}
+              >
+                <MiniTransfer kind={kind} active={on} />
+                <span className="font-mono text-[10px] uppercase tracking-wider">
+                  {DRIVE_PRESET_LABEL[kind]}
+                </span>
+              </Button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {driveActions.map((a) => (
             <Button
               key={a.id}
               variant="subtle"
@@ -282,7 +363,11 @@ export function HeaderBar() {
         <div className="flex items-baseline gap-3">
           <h1 className="phosphor-wordmark text-xl text-fg">Phosphor</h1>
           <p className="hidden font-mono text-[11px] uppercase tracking-[0.2em] text-faint sm:block">
-            {domain === "space" ? "Draw the space" : "Draw the cycle"}
+            {domain === "space"
+              ? "Draw the space"
+              : domain === "drive"
+                ? "Draw the drive"
+                : "Draw the cycle"}
           </p>
         </div>
         <TreatmentSelector />

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { synth, type SynthParams } from "./engine";
+import { synth, type SynthParams } from "./engine.ts";
 import {
   cloneWave,
   generatePreset,
@@ -10,7 +10,7 @@ import {
   smoothWave,
   wavesDiffer,
   type WavePreset,
-} from "./waveform";
+} from "./waveform.ts";
 import {
   INITIAL_SPACE_SEED,
   buildSpaceView,
@@ -18,11 +18,18 @@ import {
   contoursDiffer,
   generateSpaceContour,
   type SpacePreset,
-} from "./space";
+} from "./space.ts";
+import {
+  cloneTransfer,
+  generateDrivePreset,
+  identifyDrivePreset,
+  transfersDiffer,
+  type DrivePreset,
+} from "./drive.ts";
 
-export type { WavePreset, SpacePreset };
+export type { WavePreset, SpacePreset, DrivePreset };
 
-export type EditorDomain = "cycle" | "space";
+export type EditorDomain = "cycle" | "drive" | "space";
 
 const HISTORY_LIMIT = 32;
 const INITIAL_SPACE_MIX = 0.38;
@@ -32,6 +39,11 @@ type SpaceSnap = {
   seed: number;
   preset: SpacePreset | "custom";
   metal: boolean;
+};
+
+type DriveSnap = {
+  curve: number[];
+  preset: DrivePreset | "custom";
 };
 
 type SynthState = {
@@ -52,6 +64,11 @@ type SynthState = {
   morphLive: boolean;
   past: number[][];
   future: number[][];
+  driveCurve: number[];
+  drivePreset: DrivePreset | "custom";
+  driveHasDrawn: boolean;
+  drivePast: DriveSnap[];
+  driveFuture: DriveSnap[];
   spaceContour: number[];
   spaceView: number[];
   spaceSeed: number;
@@ -82,6 +99,9 @@ type SynthActions = {
   setMorph: (t: number, immediate?: boolean) => void;
   undo: () => void;
   redo: () => void;
+  setLiveDrive: (curve: number[]) => void;
+  finishDriveGesture: (before: number[], after: number[]) => void;
+  applyDrivePreset: (preset: DrivePreset) => void;
   setLiveContour: (contour: number[]) => void;
   finishSpaceGesture: (before: number[], after: number[]) => void;
   applySpacePreset: (preset: SpacePreset) => void;
@@ -96,6 +116,7 @@ type SynthActions = {
 };
 
 const initialSamples = generatePreset("sine");
+const initialDriveCurve = generateDrivePreset("identity");
 const initialContour = generateSpaceContour("room");
 const initialSeed = INITIAL_SPACE_SEED;
 
@@ -119,6 +140,15 @@ function pushSpacePast(past: SpaceSnap[], snap: SpaceSnap): SpaceSnap[] {
   return next;
 }
 
+function pushDrivePast(past: DriveSnap[], snap: DriveSnap): DriveSnap[] {
+  const next = [
+    ...past,
+    { curve: cloneTransfer(snap.curve), preset: snap.preset },
+  ];
+  if (next.length > HISTORY_LIMIT) next.splice(0, next.length - HISTORY_LIMIT);
+  return next;
+}
+
 function morphSamples(slotA: number[], slotB: number[], t: number): number[] {
   const u = Math.min(1, Math.max(0, t));
   if (u <= 0) return cloneWave(slotA);
@@ -128,6 +158,10 @@ function morphSamples(slotA: number[], slotB: number[], t: number): number[] {
 
 function applySpace(contour: number[], seed: number, metal: boolean) {
   synth.setSpace(contour, seed, metal);
+}
+
+function applyDrive(curve: number[]) {
+  synth.setDriveCurve(curve);
 }
 
 export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
@@ -148,6 +182,11 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   morphLive: false,
   past: [],
   future: [],
+  driveCurve: initialDriveCurve,
+  drivePreset: "identity",
+  driveHasDrawn: false,
+  drivePast: [],
+  driveFuture: [],
   spaceContour: initialContour,
   spaceView: buildSpaceView(initialContour, initialSeed),
   spaceSeed: initialSeed,
@@ -251,6 +290,56 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       ...(reengage ? { past: pushPast(get().past, prev), future: [] } : {}),
     });
     synth.setWaveform(samples, immediate);
+  },
+
+  setLiveDrive: (curve) => {
+    set({
+      driveCurve: curve,
+      drivePreset: "custom",
+      driveHasDrawn: true,
+    });
+    applyDrive(curve);
+  },
+
+  finishDriveGesture: (before, after) => {
+    const { drivePast } = get();
+    const changed = transfersDiffer(before, after);
+    set({
+      driveCurve: after,
+      drivePreset: "custom",
+      driveHasDrawn: true,
+      ...(changed
+        ? {
+            drivePast: pushDrivePast(drivePast, {
+              curve: before,
+              preset: identifyDrivePreset(before),
+            }),
+            driveFuture: [],
+          }
+        : {}),
+    });
+    applyDrive(after);
+  },
+
+  applyDrivePreset: (preset) => {
+    const { driveCurve, drivePreset, drivePast } = get();
+    const next = generateDrivePreset(preset);
+    if (!transfersDiffer(driveCurve, next) && drivePreset === preset) {
+      set({ drivePreset: preset, driveHasDrawn: true });
+      applyDrive(next);
+      return;
+    }
+    set({
+      driveCurve: next,
+      drivePreset: preset,
+      driveHasDrawn: true,
+      drivePast: pushDrivePast(drivePast, {
+        curve: driveCurve,
+        preset: drivePreset,
+      }),
+      driveFuture: [],
+    });
+    applyDrive(next);
   },
 
   setLiveContour: (contour) => {
@@ -371,6 +460,22 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       applySpace(prev.contour, prev.seed, prev.metal);
       return;
     }
+    if (get().domain === "drive") {
+      const { drivePast, driveCurve, drivePreset, driveFuture } = get();
+      const prev = drivePast[drivePast.length - 1];
+      if (!prev) return;
+      set({
+        driveCurve: cloneTransfer(prev.curve),
+        drivePreset: prev.preset,
+        drivePast: drivePast.slice(0, -1),
+        driveFuture: [
+          ...driveFuture,
+          { curve: cloneTransfer(driveCurve), preset: drivePreset },
+        ],
+      });
+      applyDrive(prev.curve);
+      return;
+    }
     const { past, samples, future } = get();
     const prev = past[past.length - 1];
     if (!prev) return;
@@ -412,6 +517,22 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       applySpace(next.contour, next.seed, next.metal);
       return;
     }
+    if (get().domain === "drive") {
+      const { driveFuture, driveCurve, drivePreset, drivePast } = get();
+      const next = driveFuture[driveFuture.length - 1];
+      if (!next) return;
+      set({
+        driveCurve: cloneTransfer(next.curve),
+        drivePreset: next.preset,
+        driveFuture: driveFuture.slice(0, -1),
+        drivePast: pushDrivePast(drivePast, {
+          curve: driveCurve,
+          preset: drivePreset,
+        }),
+      });
+      applyDrive(next.curve);
+      return;
+    }
     const { future, samples, past } = get();
     const next = future[future.length - 1];
     if (!next) return;
@@ -441,5 +562,6 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
 }));
 
 synth.setWaveform(cloneWave(initialSamples), true);
+synth.setDriveCurve(cloneTransfer(initialDriveCurve));
 synth.setSpace(cloneContour(initialContour), initialSeed, false);
 synth.setSpaceMix(INITIAL_SPACE_MIX);

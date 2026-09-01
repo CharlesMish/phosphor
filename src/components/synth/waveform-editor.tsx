@@ -13,6 +13,7 @@ import {
   sampleContour,
 } from "@/lib/synth/space";
 import { synth } from "@/lib/synth/engine";
+import { DRIVE_SIZE } from "@/lib/synth/drive";
 import { cn } from "@/lib/utils";
 
 const PAD_X = 44;
@@ -71,21 +72,26 @@ export function WaveformEditor() {
   const domain = useSynthStore((s) => s.domain);
   const { treatment } = useTreatment();
   const samples = useSynthStore((s) => s.samples);
+  const driveCurve = useSynthStore((s) => s.driveCurve);
   const spaceContour = useSynthStore((s) => s.spaceContour);
   const spaceView = useSynthStore((s) => s.spaceView);
   const hasDrawn = useSynthStore((s) => s.hasDrawn);
   const spaceHasDrawn = useSynthStore((s) => s.spaceHasDrawn);
+  const driveHasDrawn = useSynthStore((s) => s.driveHasDrawn);
   const morphLive = useSynthStore((s) => s.morphLive);
   const morphArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
   const setDomain = useSynthStore((s) => s.setDomain);
   const setLiveSamples = useSynthStore((s) => s.setLiveSamples);
   const finishGesture = useSynthStore((s) => s.finishGesture);
+  const setLiveDrive = useSynthStore((s) => s.setLiveDrive);
+  const finishDriveGesture = useSynthStore((s) => s.finishDriveGesture);
   const setLiveContour = useSynthStore((s) => s.setLiveContour);
   const finishSpaceGesture = useSynthStore((s) => s.finishSpaceGesture);
   const markDrawn = useSynthStore((s) => s.markDrawn);
   const markSpaceDrawn = useSynthStore((s) => s.markSpaceDrawn);
 
   const liveRef = useRef<number[]>(samples);
+  const driveRef = useRef<number[]>(driveCurve);
   const contourRef = useRef<number[]>(spaceContour);
   const viewRef = useRef<number[]>(spaceView);
   const domainRef = useRef(domain);
@@ -96,6 +102,7 @@ export function WaveformEditor() {
   domainRef.current = domain;
   if (!drawingRef.current) {
     liveRef.current = samples;
+    driveRef.current = driveCurve;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
   }
@@ -130,6 +137,7 @@ export function WaveformEditor() {
     const yAt = (v: number) => padY + (0.5 - v * 0.5) * innerH;
     const yEnergy = (e: number) => padY + (1 - clamp(e, 0, 1)) * innerH;
     const space = domainRef.current === "space";
+    const drive = domainRef.current === "drive";
 
     drawPlotGrid(ctx, padX, padY, innerW, innerH, tokens);
 
@@ -208,6 +216,60 @@ export function WaveformEditor() {
       ctx.fillText("0 s", padX, padY + innerH + 8);
       ctx.textAlign = "right";
       ctx.fillText(`${SPACE_SECONDS.toFixed(1)} s`, padX + innerW, padY + innerH + 8);
+    } else if (drive) {
+      const curve = driveRef.current;
+      const n = curve.length || DRIVE_SIZE;
+      const xAt = (i: number) => padX + (i / Math.max(1, n - 1)) * innerW;
+
+      ctx.strokeStyle = tokens.axis;
+      ctx.beginPath();
+      ctx.moveTo(padX, yAt(0));
+      ctx.lineTo(padX + innerW, yAt(0));
+      ctx.moveTo(padX + innerW * 0.5, padY);
+      ctx.lineTo(padX + innerW * 0.5, padY + innerH);
+      ctx.stroke();
+
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = tokens.annotation;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 5]);
+      ctx.beginPath();
+      ctx.moveTo(padX, yAt(-1));
+      ctx.lineTo(padX + innerW, yAt(1));
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.strokeStyle = tokens.tracePrimary;
+      ctx.lineWidth = tokens.traceWidth;
+      ctx.shadowColor = tokens.tracePrimary;
+      ctx.shadowBlur = tokens.traceGlow;
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = xAt(i);
+        const y = yAt(curve[i] ?? 0);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.fillStyle = tokens.annotation;
+      ctx.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText("+1", 8, yAt(1));
+      ctx.fillText("0", 12, yAt(0));
+      ctx.fillText("−1", 8, yAt(-1));
+      ctx.textBaseline = "top";
+      ctx.fillText("−1 in", padX, padY + innerH + 8);
+      ctx.textAlign = "center";
+      ctx.fillText("0", padX + innerW * 0.5, padY + innerH + 8);
+      ctx.textAlign = "right";
+      ctx.fillText("+1 in", padX + innerW, padY + innerH + 8);
     } else {
       ctx.strokeStyle = tokens.axis;
       ctx.beginPath();
@@ -296,11 +358,12 @@ export function WaveformEditor() {
 
   useEffect(() => {
     liveRef.current = samples;
+    driveRef.current = driveCurve;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
     domainRef.current = domain;
     paint();
-  }, [samples, spaceContour, spaceView, domain, paint]);
+  }, [samples, driveCurve, spaceContour, spaceView, domain, paint]);
 
   useEffect(() => {
     paint();
@@ -327,6 +390,10 @@ export function WaveformEditor() {
       const index = clamp(Math.round(x * (SPACE_SIZE - 1)), 0, SPACE_SIZE - 1);
       return { index, value: clamp(1 - y, 0, 1), size: SPACE_SIZE };
     }
+    if (domainRef.current === "drive") {
+      const index = clamp(Math.round(x * (DRIVE_SIZE - 1)), 0, DRIVE_SIZE - 1);
+      return { index, value: clamp(1 - 2 * y, -1, 1), size: DRIVE_SIZE };
+    }
     const index = clamp(Math.round(x * WAVE_SIZE) % WAVE_SIZE, 0, WAVE_SIZE - 1);
     const value = clamp(1 - 2 * y, -1, 1);
     return { index, value, size: WAVE_SIZE };
@@ -349,9 +416,10 @@ export function WaveformEditor() {
     e.currentTarget.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     const space = domainRef.current === "space";
+    const drive = domainRef.current === "drive";
     if (space) markSpaceDrawn();
-    else markDrawn();
-    const source = space ? contourRef.current : liveRef.current;
+    else if (!drive) markDrawn();
+    const source = space ? contourRef.current : drive ? driveRef.current : liveRef.current;
     originRef.current = source.slice();
     const hit = eventToHit(e);
     if (!hit) return;
@@ -362,6 +430,9 @@ export function WaveformEditor() {
       contourRef.current = wave;
       viewRef.current = buildSpaceView(wave, useSynthStore.getState().spaceSeed);
       setLiveContour(wave);
+    } else if (drive) {
+      driveRef.current = wave;
+      setLiveDrive(wave);
     } else {
       liveRef.current = wave;
       setLiveSamples(wave, false);
@@ -374,7 +445,10 @@ export function WaveformEditor() {
     const hit = eventToHit(e);
     if (!hit) return;
     const space = domainRef.current === "space";
-    const wave = (space ? contourRef.current : liveRef.current).slice();
+    const drive = domainRef.current === "drive";
+    const wave = (
+      space ? contourRef.current : drive ? driveRef.current : liveRef.current
+    ).slice();
     const last = lastIndexRef.current;
     if (last === null || last === hit.index) {
       wave[hit.index] = hit.value;
@@ -386,6 +460,9 @@ export function WaveformEditor() {
       contourRef.current = wave;
       viewRef.current = buildSpaceView(wave, useSynthStore.getState().spaceSeed);
       setLiveContour(wave);
+    } else if (drive) {
+      driveRef.current = wave;
+      setLiveDrive(wave);
     } else {
       liveRef.current = wave;
       setLiveSamples(wave, false);
@@ -403,17 +480,23 @@ export function WaveformEditor() {
       /* already released */
     }
     const space = domainRef.current === "space";
-    const origin = originRef.current ?? (space ? contourRef.current : liveRef.current);
+    const drive = domainRef.current === "drive";
+    const current = space ? contourRef.current : drive ? driveRef.current : liveRef.current;
+    const origin = originRef.current ?? current;
     originRef.current = null;
     if (space) finishSpaceGesture(origin, contourRef.current);
+    else if (drive) finishDriveGesture(origin, driveRef.current);
     else finishGesture(origin, liveRef.current);
   };
 
   const space = domain === "space";
+  const drive = domain === "drive";
   const title = space
     ? "Space · impulse response"
+    : drive
+      ? "Drive · transfer function"
     : `Oscillator · ${morphArmed && !morphLive ? "custom" : "1 cycle"}`;
-  const showHint = space ? !spaceHasDrawn : !hasDrawn;
+  const showHint = space ? !spaceHasDrawn : drive ? !driveHasDrawn : !hasDrawn;
 
   return (
     <div className="relative flex min-h-32 flex-1 flex-col overflow-hidden rounded-xl bg-plot shadow-border md:min-h-0">
@@ -424,12 +507,23 @@ export function WaveformEditor() {
               type="button"
               className={cn(
                 "h-7 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
-                !space ? "bg-active text-active-ink" : "text-faint hover:text-fg",
+                domain === "cycle" ? "bg-active text-active-ink" : "text-faint hover:text-fg",
               )}
-              aria-pressed={!space}
+              aria-pressed={domain === "cycle"}
               onClick={() => setDomain("cycle")}
             >
               Cycle
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "h-7 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+                drive ? "bg-active text-active-ink" : "text-faint hover:text-fg",
+              )}
+              aria-pressed={drive}
+              onClick={() => setDomain("drive")}
+            >
+              Drive
             </button>
             <button
               type="button"
@@ -448,7 +542,11 @@ export function WaveformEditor() {
           </span>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
-          {space ? `0 s → ${SPACE_SECONDS.toFixed(1)} s` : "−1 ↔ +1"}
+          {space
+            ? `0 s → ${SPACE_SECONDS.toFixed(1)} s`
+            : drive
+              ? "input → output"
+              : "−1 ↔ +1"}
         </span>
       </div>
       <canvas
@@ -458,7 +556,13 @@ export function WaveformEditor() {
         onPointerMove={onPointerMove}
         onPointerUp={endDraw}
         onPointerCancel={endDraw}
-        aria-label={space ? "Draw space impulse response" : "Draw oscillator waveform"}
+        aria-label={
+          space
+            ? "Draw space impulse response"
+            : drive
+              ? "Draw drive transfer function"
+              : "Draw oscillator waveform"
+        }
       />
       {showHint && (
         <p
@@ -467,7 +571,11 @@ export function WaveformEditor() {
             "font-mono text-xs tracking-wide text-muted/80",
           )}
         >
-          {space ? "Drag to draw this response" : "Drag to redraw this cycle"}
+          {space
+            ? "Drag to draw this response"
+            : drive
+              ? "Drag to shape input into output"
+              : "Drag to redraw this cycle"}
         </p>
       )}
     </div>
