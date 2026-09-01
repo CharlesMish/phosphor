@@ -446,9 +446,6 @@ export function WaveformEditor() {
     const last = lastIndexRef.current;
     if (last === null || last === hit.index) {
       wave[hit.index] = hit.value;
-    } else if (chorus) {
-      chorusRef.current = wave;
-      setLiveChorus(wave);
     } else {
       paintSpan(last, hit.index, wave[last] ?? hit.value, hit.value, wave);
     }
@@ -457,6 +454,9 @@ export function WaveformEditor() {
       contourRef.current = wave;
       viewRef.current = buildSpaceView(wave, useSynthStore.getState().spaceSeed);
       setLiveContour(wave);
+    } else if (chorus) {
+      chorusRef.current = wave;
+      setLiveChorus(wave);
     } else {
       liveRef.current = wave;
       setLiveSamples(wave, false);
@@ -502,9 +502,9 @@ export function WaveformEditor() {
               type="button"
               className={cn(
                 "h-7 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
-                !space ? "bg-active text-active-ink" : "text-faint hover:text-fg",
+                domain === "cycle" ? "bg-active text-active-ink" : "text-faint hover:text-fg",
               )}
-              aria-pressed={!space}
+              aria-pressed={domain === "cycle"}
               onClick={() => setDomain("cycle")}
             >
               Cycle

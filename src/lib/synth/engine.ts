@@ -11,6 +11,7 @@ import {
   CHORUS_MAX_MS,
   CHORUS_MIN_MS,
   phaseShiftCurve,
+  chorusMixGains,
 } from "./chorus";
 
 const MAX_VOICES = 12;
@@ -84,6 +85,7 @@ export class SynthEngine {
   private bus: GainNode | null = null;
   private chorusDry: GainNode | null = null;
   private chorusWet: GainNode | null = null;
+  private chorusSum: GainNode | null = null;
   private chorusDelayL: DelayNode | null = null;
   private chorusDelayR: DelayNode | null = null;
   private chorusLfoL: OscillatorNode | null = null;
@@ -363,8 +365,10 @@ export class SynthEngine {
     bus.connect(chorusDelayR);
     chorusDelayL.connect(merger, 0, 0);
     chorusDelayR.connect(merger, 0, 1);
-    chorusDry.connect(chorusWet);
+    const chorusSum = ctx.createGain();
+    chorusDry.connect(chorusSum);
     merger.connect(chorusWet);
+    chorusWet.connect(chorusSum);
 
     const dryGain = ctx.createGain();
     const wetIn = ctx.createGain();
@@ -400,8 +404,8 @@ export class SynthEngine {
     analyser.smoothingTimeConstant = 0.1;
 
     filter.connect(bus);
-    chorusWet.connect(dryGain);
-    chorusWet.connect(wetIn);
+    chorusSum.connect(dryGain);
+    chorusSum.connect(wetIn);
     wetIn.connect(convA);
     wetIn.connect(convB);
     convA.connect(wetA);
@@ -419,6 +423,7 @@ export class SynthEngine {
     this.bus = bus;
     this.chorusDry = chorusDry;
     this.chorusWet = chorusWet;
+    this.chorusSum = chorusSum;
     this.chorusDelayL = chorusDelayL;
     this.chorusDelayR = chorusDelayR;
     this.chorusLfoL = lfoL;
@@ -469,7 +474,7 @@ export class SynthEngine {
   private applyChorusMix() {
     if (!this.chorusDry || !this.chorusWet) return;
     const now = this.ctx?.currentTime ?? 0;
-    const { dry, wet } = equalPower(this.chorusMix);
+    const { dry, wet } = chorusMixGains(this.chorusMix);
     this.chorusDry.gain.setTargetAtTime(dry, now, CHORUS_FADE);
     this.chorusWet.gain.setTargetAtTime(wet, now, CHORUS_FADE);
   }

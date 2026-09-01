@@ -26,6 +26,14 @@ export function chorusPosition(delayMs: number): number {
   return clamp01((delayMs - CHORUS_MIN_MS) / (CHORUS_MAX_MS - CHORUS_MIN_MS)) * 2 - 1;
 }
 
+export function chorusMixGains(mix: number): { dry: number; wet: number } {
+  const x = clamp01(mix);
+  if (x === 0) return { dry: 1, wet: 0 };
+  if (x === 1) return { dry: 0, wet: 1 };
+  const angle = x * (Math.PI / 2);
+  return { dry: Math.cos(angle), wet: Math.sin(angle) };
+}
+
 export function phaseShiftCurve(curve: number[], phase = 0.5): number[] {
   const n = curve.length;
   if (n === 0) return [];
