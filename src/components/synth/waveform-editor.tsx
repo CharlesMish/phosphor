@@ -14,6 +14,13 @@ import {
 } from "@/lib/synth/space";
 import { synth } from "@/lib/synth/engine";
 import { cn } from "@/lib/utils";
+import {
+  CHORUS_MAX_MS,
+  CHORUS_MIN_MS,
+  CHORUS_SIZE,
+  chorusDelayMs,
+  phaseShiftCurve,
+} from "@/lib/synth/chorus";
 
 const PAD_X = 44;
 const PAD_Y = 40;
@@ -75,6 +82,7 @@ export function WaveformEditor() {
   const spaceView = useSynthStore((s) => s.spaceView);
   const hasDrawn = useSynthStore((s) => s.hasDrawn);
   const spaceHasDrawn = useSynthStore((s) => s.spaceHasDrawn);
+  const chorusCurve = useSynthStore((s) => s.chorusCurve);
   const morphLive = useSynthStore((s) => s.morphLive);
   const morphArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
   const setDomain = useSynthStore((s) => s.setDomain);
@@ -84,10 +92,13 @@ export function WaveformEditor() {
   const finishSpaceGesture = useSynthStore((s) => s.finishSpaceGesture);
   const markDrawn = useSynthStore((s) => s.markDrawn);
   const markSpaceDrawn = useSynthStore((s) => s.markSpaceDrawn);
+  const setLiveChorus = useSynthStore((s) => s.setLiveChorus);
+  const finishChorusGesture = useSynthStore((s) => s.finishChorusGesture);
 
   const liveRef = useRef<number[]>(samples);
   const contourRef = useRef<number[]>(spaceContour);
   const viewRef = useRef<number[]>(spaceView);
+  const chorusRef = useRef<number[]>(chorusCurve);
   const domainRef = useRef(domain);
   const drawingRef = useRef(false);
   const lastIndexRef = useRef<number | null>(null);
@@ -98,6 +109,7 @@ export function WaveformEditor() {
     liveRef.current = samples;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
+    chorusRef.current = chorusCurve;
   }
 
   const paint = useCallback(() => {
@@ -130,10 +142,56 @@ export function WaveformEditor() {
     const yAt = (v: number) => padY + (0.5 - v * 0.5) * innerH;
     const yEnergy = (e: number) => padY + (1 - clamp(e, 0, 1)) * innerH;
     const space = domainRef.current === "space";
+    const chorus = domainRef.current === "chorus";
 
     drawPlotGrid(ctx, padX, padY, innerW, innerH, tokens);
 
-    if (space) {
+    if (chorus) {
+      const curve = chorusRef.current;
+      const n = curve.length || CHORUS_SIZE;
+      const xLin = (i: number) => padX + (i / Math.max(1, n - 1)) * innerW;
+      const yDelay = (v: number) =>
+        padY +
+        (1 - (chorusDelayMs(v) - CHORUS_MIN_MS) / (CHORUS_MAX_MS - CHORUS_MIN_MS)) *
+          innerH;
+      ctx.strokeStyle = tokens.axis;
+      ctx.beginPath();
+      ctx.moveTo(padX, padY);
+      ctx.lineTo(padX, padY + innerH);
+      ctx.lineTo(padX + innerW, padY + innerH);
+      ctx.stroke();
+      ctx.fillStyle = tokens.annotation;
+      ctx.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
+      ctx.textAlign = "left";
+      ctx.fillText(`${CHORUS_MAX_MS} ms`, 8, padY);
+      ctx.fillText(`${CHORUS_MIN_MS} ms`, 8, padY + innerH);
+      ctx.textAlign = "right";
+      ctx.fillText("0°", padX, padY + innerH + 18);
+      ctx.fillText("360°", padX + innerW, padY + innerH + 18);
+      const stroke = (values: number[], color: string, alpha: number, width: number) => {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        values.forEach((v, i) => {
+          const x = xLin(i);
+          const y = yDelay(v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.restore();
+      };
+      stroke(curve, tokens.tracePrimary, 1, tokens.traceWidth);
+      stroke(phaseShiftCurve(curve), tokens.traceSecondary, 0.35, 1);
+      ctx.fillStyle = tokens.annotation;
+      ctx.textAlign = "left";
+      ctx.fillText("authored", padX + 8, padY + 12);
+      ctx.fillStyle = tokens.traceSecondary;
+      ctx.fillText("derived stereo", padX + 8, padY + 27);
+    } else if (space) {
       const contour = contourRef.current;
       const view = viewRef.current;
       const cn = contour.length || SPACE_SIZE;
@@ -298,9 +356,10 @@ export function WaveformEditor() {
     liveRef.current = samples;
     contourRef.current = spaceContour;
     viewRef.current = spaceView;
+    chorusRef.current = chorusCurve;
     domainRef.current = domain;
     paint();
-  }, [samples, spaceContour, spaceView, domain, paint]);
+  }, [samples, spaceContour, spaceView, chorusCurve, domain, paint]);
 
   useEffect(() => {
     paint();
@@ -327,6 +386,10 @@ export function WaveformEditor() {
       const index = clamp(Math.round(x * (SPACE_SIZE - 1)), 0, SPACE_SIZE - 1);
       return { index, value: clamp(1 - y, 0, 1), size: SPACE_SIZE };
     }
+    if (domainRef.current === "chorus") {
+      const index = clamp(Math.round(x * (CHORUS_SIZE - 1)), 0, CHORUS_SIZE - 1);
+      return { index, value: clamp(1 - 2 * y, -1, 1), size: CHORUS_SIZE };
+    }
     const index = clamp(Math.round(x * WAVE_SIZE) % WAVE_SIZE, 0, WAVE_SIZE - 1);
     const value = clamp(1 - 2 * y, -1, 1);
     return { index, value, size: WAVE_SIZE };
@@ -349,9 +412,10 @@ export function WaveformEditor() {
     e.currentTarget.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     const space = domainRef.current === "space";
+    const chorus = domainRef.current === "chorus";
     if (space) markSpaceDrawn();
-    else markDrawn();
-    const source = space ? contourRef.current : liveRef.current;
+    else if (!chorus) markDrawn();
+    const source = space ? contourRef.current : chorus ? chorusRef.current : liveRef.current;
     originRef.current = source.slice();
     const hit = eventToHit(e);
     if (!hit) return;
@@ -362,6 +426,9 @@ export function WaveformEditor() {
       contourRef.current = wave;
       viewRef.current = buildSpaceView(wave, useSynthStore.getState().spaceSeed);
       setLiveContour(wave);
+    } else if (chorus) {
+      chorusRef.current = wave;
+      setLiveChorus(wave);
     } else {
       liveRef.current = wave;
       setLiveSamples(wave, false);
@@ -374,10 +441,14 @@ export function WaveformEditor() {
     const hit = eventToHit(e);
     if (!hit) return;
     const space = domainRef.current === "space";
-    const wave = (space ? contourRef.current : liveRef.current).slice();
+    const chorus = domainRef.current === "chorus";
+    const wave = (space ? contourRef.current : chorus ? chorusRef.current : liveRef.current).slice();
     const last = lastIndexRef.current;
     if (last === null || last === hit.index) {
       wave[hit.index] = hit.value;
+    } else if (chorus) {
+      chorusRef.current = wave;
+      setLiveChorus(wave);
     } else {
       paintSpan(last, hit.index, wave[last] ?? hit.value, hit.value, wave);
     }
@@ -403,17 +474,24 @@ export function WaveformEditor() {
       /* already released */
     }
     const space = domainRef.current === "space";
-    const origin = originRef.current ?? (space ? contourRef.current : liveRef.current);
+    const chorus = domainRef.current === "chorus";
+    const origin =
+      originRef.current ??
+      (space ? contourRef.current : chorus ? chorusRef.current : liveRef.current);
     originRef.current = null;
     if (space) finishSpaceGesture(origin, contourRef.current);
+    else if (chorus) finishChorusGesture(origin, chorusRef.current);
     else finishGesture(origin, liveRef.current);
   };
 
   const space = domain === "space";
-  const title = space
+  const chorus = domain === "chorus";
+  const title = chorus
+    ? "Chorus · delay-time cycle"
+    : space
     ? "Space · impulse response"
     : `Oscillator · ${morphArmed && !morphLive ? "custom" : "1 cycle"}`;
-  const showHint = space ? !spaceHasDrawn : !hasDrawn;
+  const showHint = chorus ? false : space ? !spaceHasDrawn : !hasDrawn;
 
   return (
     <div className="relative flex min-h-32 flex-1 flex-col overflow-hidden rounded-xl bg-plot shadow-border md:min-h-0">
@@ -442,13 +520,24 @@ export function WaveformEditor() {
             >
               Space
             </button>
+            <button
+              type="button"
+              className={cn(
+                "h-7 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+                chorus ? "bg-active text-active-ink" : "text-faint hover:text-fg",
+              )}
+              aria-pressed={chorus}
+              onClick={() => setDomain("chorus")}
+            >
+              Chorus
+            </button>
           </div>
           <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-faint sm:inline">
             {title}
           </span>
         </div>
         <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
-          {space ? `0 s → ${SPACE_SECONDS.toFixed(1)} s` : "−1 ↔ +1"}
+          {chorus ? "8 ↔ 24 ms" : space ? `0 s → ${SPACE_SECONDS.toFixed(1)} s` : "−1 ↔ +1"}
         </span>
       </div>
       <canvas
@@ -458,7 +547,9 @@ export function WaveformEditor() {
         onPointerMove={onPointerMove}
         onPointerUp={endDraw}
         onPointerCancel={endDraw}
-        aria-label={space ? "Draw space impulse response" : "Draw oscillator waveform"}
+        aria-label={
+          chorus ? "Draw chorus delay-time modulation" : space ? "Draw space impulse response" : "Draw oscillator waveform"
+        }
       />
       {showHint && (
         <p

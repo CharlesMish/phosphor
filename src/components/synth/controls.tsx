@@ -12,6 +12,7 @@ import {
 } from "@/lib/synth/space";
 import { rangeLabel } from "@/lib/synth/keyboard-map";
 import { cn } from "@/lib/utils";
+import { CHORUS_PRESET_LABEL, CHORUS_PRESET_ORDER, type ChorusPreset } from "@/lib/synth/chorus";
 
 function MiniWave({ kind, active }: { kind: WavePreset; active: boolean }) {
   const w = 44;
@@ -147,6 +148,8 @@ export function SideParams() {
 
 export function PresetBar() {
   const domain = useSynthStore((s) => s.domain);
+  const chorusPreset = useSynthStore((s) => s.chorusPreset);
+  const applyChorusPreset = useSynthStore((s) => s.applyChorusPreset);
   const preset = useSynthStore((s) => s.preset);
   const spacePreset = useSynthStore((s) => s.spacePreset);
   const applyPreset = useSynthStore((s) => s.applyPreset);
@@ -226,6 +229,24 @@ export function PresetBar() {
     );
   }
 
+  if (domain === "chorus") {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {CHORUS_PRESET_ORDER.map((kind: ChorusPreset) => {
+          const on = chorusPreset === kind;
+          return (
+            <Button key={kind} variant={on ? "solid" : "outline"} size="sm"
+              className={cn("h-10 min-w-14 px-2 font-mono text-[10px] uppercase tracking-wider", on && "text-active-ink")}
+              onClick={() => applyChorusPreset(kind)} aria-pressed={on}>
+              <span className="mr-1 text-base leading-none">{kind === "sine" ? "∿" : kind === "triangle" ? "⌁" : kind === "rise" ? "↗" : "⌇"}</span>
+              {CHORUS_PRESET_LABEL[kind]}
+            </Button>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex flex-wrap gap-1.5">
@@ -282,7 +303,7 @@ export function HeaderBar() {
         <div className="flex items-baseline gap-3">
           <h1 className="phosphor-wordmark text-xl text-fg">Phosphor</h1>
           <p className="hidden font-mono text-[11px] uppercase tracking-[0.2em] text-faint sm:block">
-            {domain === "space" ? "Draw the space" : "Draw the cycle"}
+            {domain === "space" ? "Draw the space" : domain === "chorus" ? "Draw the delay" : "Draw the cycle"}
           </p>
         </div>
         <TreatmentSelector />

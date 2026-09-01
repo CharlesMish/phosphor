@@ -10,6 +10,7 @@ import { Piano } from "./piano";
 import { HeaderBar, PresetBar, SideParams } from "./controls";
 import { MorphBar } from "./morph-bar";
 import { SpaceBar } from "./space-bar";
+import { ChorusBar } from "./chorus-bar";
 
 type PhosphorDebug = {
   peak: () => number;
@@ -141,7 +142,7 @@ export function PhosphorApp() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
             <WaveformEditor />
             <div className="shrink-0">
-              {domain === "space" ? <SpaceBar /> : <MorphBar />}
+              {domain === "space" ? <SpaceBar /> : domain === "chorus" ? <ChorusBar /> : <MorphBar />}
             </div>
           </div>
           <div className="flex w-full min-h-0 flex-col gap-3 lg:w-72 lg:shrink-0">

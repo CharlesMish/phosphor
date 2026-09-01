@@ -6,6 +6,12 @@ import {
 import { midiToHz } from "./keyboard-map";
 import { buildSpaceBuffer } from "./space";
 import { buildOutputSafetyCurve } from "./safety";
+import {
+  CHORUS_DEFAULT_PERIOD,
+  CHORUS_MAX_MS,
+  CHORUS_MIN_MS,
+  phaseShiftCurve,
+} from "./chorus";
 
 const MAX_VOICES = 12;
 const VOICE_GAIN = 0.22;
@@ -14,6 +20,7 @@ const SPACE_FADE = 0.07;
 const WAVE_THROTTLE_MS = 32;
 const MIN_ATTACK = 0.004;
 const MIN_RELEASE = 0.03;
+const CHORUS_FADE = 0.03;
 
 type SpaceSpec = { contour: number[]; seed: number; metal: boolean };
 
@@ -75,6 +82,14 @@ export class SynthEngine {
   private ctx: AudioContext | null = null;
   private filter: BiquadFilterNode | null = null;
   private bus: GainNode | null = null;
+  private chorusDry: GainNode | null = null;
+  private chorusWet: GainNode | null = null;
+  private chorusDelayL: DelayNode | null = null;
+  private chorusDelayR: DelayNode | null = null;
+  private chorusLfoL: OscillatorNode | null = null;
+  private chorusLfoR: OscillatorNode | null = null;
+  private chorusPeriod = CHORUS_DEFAULT_PERIOD;
+  private chorusCurve: number[] | null = null;
   private master: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
   private dryGain: GainNode | null = null;
@@ -97,6 +112,7 @@ export class SynthEngine {
     cutoff: 1,
   };
   private spaceMix = 0.38;
+  private chorusMix = 0.62;
   private lastWaveAt = 0;
   private pendingSamples: number[] | null = null;
   private space: SpaceSpec | null = null;
@@ -167,6 +183,40 @@ export class SynthEngine {
   setSpaceMix(mix: number) {
     this.spaceMix = Math.min(1, Math.max(0, mix));
     this.applyMix();
+  }
+
+  setChorusMix(mix: number) {
+    this.chorusMix = Math.min(1, Math.max(0, mix));
+    this.applyChorusMix();
+  }
+
+  setChorusPeriod(period: number) {
+    this.chorusPeriod = Math.min(4, Math.max(0.25, period));
+    const now = this.ctx?.currentTime ?? 0;
+    this.chorusLfoL?.frequency.setTargetAtTime(1 / this.chorusPeriod, now, 0.02);
+    this.chorusLfoR?.frequency.setTargetAtTime(1 / this.chorusPeriod, now, 0.02);
+  }
+
+  setChorusCurve(curve: number[]) {
+    this.chorusCurve = curve.slice();
+    if (!this.ctx || !this.chorusLfoL || !this.chorusLfoR) return;
+    const leftCoefficients = waveformToCoefficients(
+      curve,
+      Math.min(HARMONIC_COUNT, curve.length / 2),
+    );
+    const left = this.ctx.createPeriodicWave(leftCoefficients.real, leftCoefficients.imag, {
+      disableNormalization: true,
+    });
+    const rightCurve = phaseShiftCurve(curve);
+    const rightCoefficients = waveformToCoefficients(
+      rightCurve,
+      Math.min(HARMONIC_COUNT, rightCurve.length / 2),
+    );
+    const right = this.ctx.createPeriodicWave(rightCoefficients.real, rightCoefficients.imag, {
+      disableNormalization: true,
+    });
+    this.chorusLfoL.setPeriodicWave(left);
+    this.chorusLfoR.setPeriodicWave(right);
   }
 
   setSpace(contour: number[], seed: number, metal = false) {
@@ -261,6 +311,12 @@ export class SynthEngine {
     this.allNotesOff();
     if (this.waveTimer !== null) window.clearTimeout(this.waveTimer);
     if (this.spaceTimer !== null) window.clearTimeout(this.spaceTimer);
+    try {
+      this.chorusLfoL?.stop();
+      this.chorusLfoR?.stop();
+    } catch {
+      /* already stopped */
+    }
     this.pendingSpace = this.space;
     void this.ctx?.close();
     this.ctx = null;
@@ -278,6 +334,37 @@ export class SynthEngine {
 
     const bus = ctx.createGain();
     bus.gain.value = 1;
+
+    const chorusDry = ctx.createGain();
+    const chorusWet = ctx.createGain();
+    const chorusDelayL = ctx.createDelay(0.1);
+    const chorusDelayR = ctx.createDelay(0.1);
+    chorusDelayL.delayTime.value = CHORUS_MIN_MS / 1000;
+    chorusDelayR.delayTime.value = CHORUS_MIN_MS / 1000;
+    const merger = ctx.createChannelMerger(2);
+    const lfoL = ctx.createOscillator();
+    const lfoR = ctx.createOscillator();
+    lfoL.frequency.value = 1 / this.chorusPeriod;
+    lfoR.frequency.value = 1 / this.chorusPeriod;
+    const lfoGainL = ctx.createGain();
+    const lfoGainR = ctx.createGain();
+    lfoGainL.gain.value = (CHORUS_MAX_MS - CHORUS_MIN_MS) / 2000;
+    lfoGainR.gain.value = (CHORUS_MAX_MS - CHORUS_MIN_MS) / 2000;
+    const delayBiasL = ctx.createConstantSource();
+    const delayBiasR = ctx.createConstantSource();
+    delayBiasL.offset.value = (CHORUS_MAX_MS + CHORUS_MIN_MS) / 2000;
+    delayBiasR.offset.value = (CHORUS_MAX_MS + CHORUS_MIN_MS) / 2000;
+    lfoL.connect(lfoGainL).connect(chorusDelayL.delayTime);
+    lfoR.connect(lfoGainR).connect(chorusDelayR.delayTime);
+    delayBiasL.connect(chorusDelayL.delayTime);
+    delayBiasR.connect(chorusDelayR.delayTime);
+    bus.connect(chorusDry);
+    bus.connect(chorusDelayL);
+    bus.connect(chorusDelayR);
+    chorusDelayL.connect(merger, 0, 0);
+    chorusDelayR.connect(merger, 0, 1);
+    chorusDry.connect(chorusWet);
+    merger.connect(chorusWet);
 
     const dryGain = ctx.createGain();
     const wetIn = ctx.createGain();
@@ -313,8 +400,8 @@ export class SynthEngine {
     analyser.smoothingTimeConstant = 0.1;
 
     filter.connect(bus);
-    bus.connect(dryGain);
-    bus.connect(wetIn);
+    chorusWet.connect(dryGain);
+    chorusWet.connect(wetIn);
     wetIn.connect(convA);
     wetIn.connect(convB);
     convA.connect(wetA);
@@ -330,6 +417,12 @@ export class SynthEngine {
 
     this.filter = filter;
     this.bus = bus;
+    this.chorusDry = chorusDry;
+    this.chorusWet = chorusWet;
+    this.chorusDelayL = chorusDelayL;
+    this.chorusDelayR = chorusDelayR;
+    this.chorusLfoL = lfoL;
+    this.chorusLfoR = lfoR;
     this.dryGain = dryGain;
     this.wetIn = wetIn;
     this.convA = convA;
@@ -346,6 +439,16 @@ export class SynthEngine {
     this.spaceFadeUntil = 0;
 
     this.applyMix();
+    this.applyChorusMix();
+    if (this.chorusCurve) this.setChorusCurve(this.chorusCurve);
+    else {
+      lfoL.type = "sine";
+      lfoR.type = "sine";
+    }
+    lfoL.start();
+    lfoR.start();
+    delayBiasL.start();
+    delayBiasR.start();
 
     if (this.pendingSamples) this.flushWaveform();
     else this.wave = ctx.createPeriodicWave(new Float32Array([0, 0]), new Float32Array([0, 0]));
@@ -361,6 +464,14 @@ export class SynthEngine {
     const { dry, wet } = equalPower(this.spaceMix);
     this.dryGain.gain.setTargetAtTime(dry, now, 0.03);
     this.wetIn.gain.setTargetAtTime(wet, now, 0.03);
+  }
+
+  private applyChorusMix() {
+    if (!this.chorusDry || !this.chorusWet) return;
+    const now = this.ctx?.currentTime ?? 0;
+    const { dry, wet } = equalPower(this.chorusMix);
+    this.chorusDry.gain.setTargetAtTime(dry, now, CHORUS_FADE);
+    this.chorusWet.gain.setTargetAtTime(wet, now, CHORUS_FADE);
   }
 
   private flushSpace() {

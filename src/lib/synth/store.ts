@@ -19,10 +19,16 @@ import {
   generateSpaceContour,
   type SpacePreset,
 } from "./space";
+import {
+  CHORUS_DEFAULT_PERIOD,
+  cloneChorusCurve,
+  generateChorusPreset,
+  type ChorusPreset,
+} from "./chorus";
 
 export type { WavePreset, SpacePreset };
 
-export type EditorDomain = "cycle" | "space";
+export type EditorDomain = "cycle" | "space" | "chorus";
 
 const HISTORY_LIMIT = 32;
 const INITIAL_SPACE_MIX = 0.38;
@@ -62,6 +68,12 @@ type SynthState = {
   spaceHasDrawn: boolean;
   spacePast: SpaceSnap[];
   spaceFuture: SpaceSnap[];
+  chorusCurve: number[];
+  chorusPreset: ChorusPreset | "custom";
+  chorusPeriod: number;
+  chorusMix: number;
+  chorusPast: number[][];
+  chorusFuture: number[][];
 };
 
 type SynthActions = {
@@ -93,11 +105,17 @@ type SynthActions = {
   setAudioReady: (ready: boolean) => void;
   markDrawn: () => void;
   markSpaceDrawn: () => void;
+  setLiveChorus: (curve: number[]) => void;
+  finishChorusGesture: (before: number[], after: number[]) => void;
+  applyChorusPreset: (preset: ChorusPreset) => void;
+  setChorusPeriod: (period: number) => void;
+  setChorusMix: (mix: number) => void;
 };
 
 const initialSamples = generatePreset("sine");
 const initialContour = generateSpaceContour("room");
 const initialSeed = INITIAL_SPACE_SEED;
+const initialChorus = generateChorusPreset("sine");
 
 function pushPast(past: number[][], snapshot: number[]): number[][] {
   const next = [...past, cloneWave(snapshot)];
@@ -157,9 +175,56 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   spaceHasDrawn: false,
   spacePast: [],
   spaceFuture: [],
+  chorusCurve: initialChorus,
+  chorusPreset: "sine",
+  chorusPeriod: CHORUS_DEFAULT_PERIOD,
+  chorusMix: 0.62,
+  chorusPast: [],
+  chorusFuture: [],
 
   setDomain: (domain) => {
     set({ domain });
+    synth.unlock();
+  },
+
+  setLiveChorus: (curve) => {
+    set({ chorusCurve: curve, chorusPreset: "custom" });
+    synth.setChorusCurve(curve);
+  },
+
+  finishChorusGesture: (before, after) => {
+    set({
+      chorusCurve: after,
+      chorusPreset: "custom",
+      chorusPast: before.some((v, i) => v !== after[i])
+        ? [...get().chorusPast.slice(-31), cloneChorusCurve(before)]
+        : get().chorusPast,
+      chorusFuture: [],
+    });
+    synth.setChorusCurve(after);
+  },
+
+  applyChorusPreset: (preset) => {
+    const next = generateChorusPreset(preset);
+    set({
+      chorusCurve: next,
+      chorusPreset: preset,
+      chorusPast: [...get().chorusPast.slice(-31), cloneChorusCurve(get().chorusCurve)],
+      chorusFuture: [],
+    });
+    synth.setChorusCurve(next);
+  },
+
+  setChorusPeriod: (period) => {
+    const next = Math.min(4, Math.max(0.25, period));
+    set({ chorusPeriod: next });
+    synth.setChorusPeriod(next);
+  },
+
+  setChorusMix: (mix) => {
+    const next = Math.min(1, Math.max(0, mix));
+    set({ chorusMix: next });
+    synth.setChorusMix(next);
     synth.unlock();
   },
 
@@ -340,6 +405,19 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   },
 
   undo: () => {
+    if (get().domain === "chorus") {
+      const past = get().chorusPast;
+      const previous = past[past.length - 1];
+      if (!previous) return;
+      set({
+        chorusCurve: cloneChorusCurve(previous),
+        chorusPreset: "custom",
+        chorusPast: past.slice(0, -1),
+        chorusFuture: [...get().chorusFuture, cloneChorusCurve(get().chorusCurve)],
+      });
+      synth.setChorusCurve(previous);
+      return;
+    }
     if (get().domain === "space") {
       const {
         spacePast,
@@ -384,6 +462,18 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
     synth.setWaveform(prev, true);
   },
   redo: () => {
+    if (get().domain === "chorus") {
+      const next = get().chorusFuture[get().chorusFuture.length - 1];
+      if (!next) return;
+      set({
+        chorusCurve: cloneChorusCurve(next),
+        chorusPreset: "custom",
+        chorusFuture: get().chorusFuture.slice(0, -1),
+        chorusPast: [...get().chorusPast, cloneChorusCurve(get().chorusCurve)],
+      });
+      synth.setChorusCurve(next);
+      return;
+    }
     if (get().domain === "space") {
       const {
         spaceFuture,
@@ -443,3 +533,4 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
 synth.setWaveform(cloneWave(initialSamples), true);
 synth.setSpace(cloneContour(initialContour), initialSeed, false);
 synth.setSpaceMix(INITIAL_SPACE_MIX);
+synth.setChorusCurve(initialChorus);

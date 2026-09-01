@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 8081",
     "typecheck": "tsc --noEmit",
-    "test:synth": "node --experimental-strip-types --test src/lib/synth/space.test.ts"
+    "test:synth": "node --experimental-strip-types --test src/lib/synth/space.test.ts src/lib/synth/chorus.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-slider": "^1.3.6",
