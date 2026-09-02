@@ -14,18 +14,29 @@ import {
   sampleTransfer,
 } from "./drive.ts";
 import {
+  CURVE_UPDATE_INTERVAL_MS,
   DRIVE_DC_BLOCK_HZ,
   DRIVE_OVERSAMPLE,
+  MAX_VOICES,
+  OSCILLATOR_SAMPLE_TARGET,
   SynthEngine,
+  VOICE_GAIN,
+  phaseAlignedPreDrivePeak,
+  voiceRebalanceGain,
 } from "./engine.ts";
 import { useSynthStore } from "./store.ts";
-import { generatePreset } from "./waveform.ts";
+import {
+  generatePreset,
+  normalizeWave,
+  waveformToCoefficients,
+} from "./waveform.ts";
 import { chorusMixGains, generateChorusPreset } from "./chorus.ts";
 import { generateSpaceContour } from "./space.ts";
 
 class TestAudioParam {
   value = 0;
   readonly setValueCalls: number[] = [];
+  readonly holdCalls: number[] = [];
   readonly targetCalls: Array<{
     prior: number;
     value: number;
@@ -55,6 +66,11 @@ class TestAudioParam {
   }
 
   cancelScheduledValues() {
+    return this;
+  }
+
+  cancelAndHoldAtTime(time: number) {
+    this.holdCalls.push(time);
     return this;
   }
 }
@@ -134,9 +150,14 @@ class TestConstantSourceNode extends TestAudioNode {
 class TestAnalyserNode extends TestAudioNode {
   fftSize = 2048;
   smoothingTimeConstant = 0;
+  private samples: number[] = [];
+
+  setSamples(samples: number[]) {
+    this.samples = samples.slice();
+  }
 
   getFloatTimeDomainData(data: Float32Array) {
-    data.fill(0);
+    for (let i = 0; i < data.length; i++) data[i] = this.samples[i] ?? 0;
   }
 }
 
@@ -204,6 +225,7 @@ class TestAudioContext {
   readonly constantSources: TestConstantSourceNode[] = [];
   readonly oscillators: TestOscillatorNode[] = [];
   readonly periodicWaves: TestPeriodicWave[] = [];
+  readonly analysers: TestAnalyserNode[] = [];
   closed = false;
 
   constructor() {
@@ -251,7 +273,9 @@ class TestAudioContext {
   }
 
   createAnalyser() {
-    return new TestAnalyserNode();
+    const node = new TestAnalyserNode();
+    this.analysers.push(node);
+    return node;
   }
 
   createOscillator() {
@@ -297,6 +321,17 @@ function periodicValue(wave: TestPeriodicWave, phase: number): number {
       (wave.imag[k] ?? 0) * Math.sin(angle);
   }
   return value;
+}
+
+function conditionedPeriodicPeak(samples: number[], probeCount = 8192): number {
+  const conditioned = normalizeWave(samples, OSCILLATOR_SAMPLE_TARGET);
+  const { real, imag } = waveformToCoefficients(conditioned);
+  const wave: TestPeriodicWave = { real, imag, disableNormalization: true };
+  let peak = 0;
+  for (let i = 0; i < probeCount; i++) {
+    peak = Math.max(peak, Math.abs(periodicValue(wave, i / probeCount)));
+  }
+  return peak;
 }
 
 describe("DRIVE transfer curve", () => {
@@ -392,6 +427,34 @@ describe("DRIVE conservative audition", () => {
     }
   });
 
+  it("keeps 1, 4, 6, and 12 reconstructed preset voices inside DRIVE's input domain", () => {
+    const identity = buildAppliedDriveCurve(generateDrivePreset("hard"), 0);
+    const oscillatorPeak = Math.max(
+      ...(["sine", "triangle", "saw", "square"] as const).map((preset) =>
+        conditionedPeriodicPeak(generatePreset(preset)),
+      ),
+    );
+    assert.ok(
+      oscillatorPeak > OSCILLATOR_SAMPLE_TARGET,
+      "the probe must include reconstruction overshoot, not just sample peaks",
+    );
+    for (const voices of [1, 4, 6, 12]) {
+      const expectedGain = 0.9 / Math.sqrt(voices);
+      assert.equal(voiceRebalanceGain(voices), expectedGain);
+
+      const summedBeforeRebalance = voices * oscillatorPeak * VOICE_GAIN;
+      const baseline = summedBeforeRebalance * expectedGain;
+      const preDrivePeak = phaseAlignedPreDrivePeak(voices, oscillatorPeak);
+      assert.ok(Math.abs(preDrivePeak - baseline) < 1e-12);
+      assert.ok(preDrivePeak < 1, `${voices} voices peak at ${preDrivePeak}`);
+      assert.ok(
+        Math.abs(sampleTransfer(identity, preDrivePeak) - baseline) < 1e-6,
+        `Amount 0 changed the ${voices}-voice baseline`,
+      );
+    }
+    assert.equal(MAX_VOICES, 12);
+  });
+
   it("uses an attenuation-only deterministic RMS guard", () => {
     const identity = buildAppliedDriveCurve(generateDrivePreset("identity"), 0.25);
     assert.equal(driveGuardGain(identity, true), 1);
@@ -467,9 +530,152 @@ describe("DRIVE history", () => {
 });
 
 describe("combined live audio graph", () => {
+  it("drops rebalance gain immediately for rapid note additions and recovers smoothly", () => {
+    const originalAudioContext = globalThis.AudioContext;
+    const originalWindow = globalThis.window;
+    let nextTimer = 1;
+    const timers = new Map<number, () => void>();
+    let engine: SynthEngine | null = null;
+    Object.assign(globalThis, {
+      AudioContext: TestAudioContext,
+      window: {
+        setTimeout: (callback: () => void) => {
+          const id = nextTimer++;
+          timers.set(id, callback);
+          return id;
+        },
+        clearTimeout: (id: number) => timers.delete(id),
+      },
+    });
+
+    try {
+      engine = new SynthEngine();
+      engine.setWaveform(generatePreset("sine"), true);
+      const checkpoints = new Set([1, 4, 6, 12]);
+      let bus: TestGainNode | null = null;
+      for (let voices = 1; voices <= MAX_VOICES; voices++) {
+        engine.noteOn(59 + voices);
+        const context = TestAudioContext.last;
+        assert.ok(context);
+        const lowPass = context.filters[0];
+        assert.ok(lowPass);
+        const candidate = lowPass.connections[0];
+        assert.ok(candidate instanceof TestGainNode);
+        bus = candidate;
+        if (checkpoints.has(voices)) {
+          assert.equal(bus.gain.setValueCalls.at(-1), voiceRebalanceGain(voices));
+          assert.equal(
+            bus.gain.targetCalls.length,
+            0,
+            `${voices}-voice attack must not use the 40 ms recovery path`,
+          );
+        }
+      }
+      assert.ok(bus);
+
+      engine.noteOff(70);
+      assert.equal(
+        bus.gain.targetCalls.length,
+        0,
+        "an audible release tail must keep its pre-DRIVE headroom",
+      );
+      const releasedOscillator = TestAudioContext.last?.oscillators[12];
+      assert.ok(releasedOscillator?.onended);
+      releasedOscillator.onended();
+      assert.equal(bus.gain.holdCalls.at(-1), 0);
+      assert.equal(bus.gain.targetCalls.at(-1)?.value, voiceRebalanceGain(11));
+      assert.equal(bus.gain.targetCalls.at(-1)?.timeConstant, 0.04);
+
+      const immediateCalls = bus.gain.setValueCalls.length;
+      const recoveryCalls = bus.gain.targetCalls.length;
+      engine.noteOn(84);
+      assert.equal(bus.gain.setValueCalls.length, immediateCalls + 1);
+      assert.equal(bus.gain.setValueCalls.at(-1), voiceRebalanceGain(12));
+      assert.equal(
+        bus.gain.targetCalls.length,
+        recoveryCalls,
+        "a rapid re-add must cancel recovery and restore headroom immediately",
+      );
+    } finally {
+      engine?.dispose();
+      Object.assign(globalThis, {
+        AudioContext: originalAudioContext,
+        window: originalWindow,
+      });
+    }
+  });
+
+  it("coalesces live DRIVE tables near the CYCLE cadence and commits immediately", () => {
+    const originalAudioContext = globalThis.AudioContext;
+    const originalWindow = globalThis.window;
+    let nextTimer = 1;
+    const timers = new Map<number, { callback: () => void; delay: number }>();
+    let engine: SynthEngine | null = null;
+    Object.assign(globalThis, {
+      AudioContext: TestAudioContext,
+      window: {
+        setTimeout: (callback: () => void, delay = 0) => {
+          const id = nextTimer++;
+          timers.set(id, { callback, delay });
+          return id;
+        },
+        clearTimeout: (id: number) => timers.delete(id),
+      },
+    });
+
+    try {
+      engine = new SynthEngine();
+      engine.unlock();
+      const context = TestAudioContext.last;
+      assert.ok(context);
+      const drive = context.shapers[0];
+      assert.ok(drive);
+
+      engine.setDriveCurve(generateDrivePreset("identity"), true);
+      const beforeLive = drive.curveAssignments.length;
+      engine.setDriveCurve(generateDrivePreset("soft"), false);
+      engine.setDriveCurve(generateDrivePreset("hard"), false);
+      engine.setDriveCurve(generateDrivePreset("asym"), false);
+      assert.equal(drive.curveAssignments.length, beforeLive);
+      assert.equal(timers.size, 1);
+      const queued = [...timers.entries()][0];
+      assert.ok(queued);
+      assert.ok(
+        queued[1].delay > 0 &&
+          queued[1].delay <= CURVE_UPDATE_INTERVAL_MS,
+      );
+      timers.delete(queued[0]);
+      queued[1].callback();
+      assert.equal(drive.curveAssignments.length, beforeLive + 1);
+      assert.deepEqual(
+        drive.curve,
+        buildAppliedDriveCurve(generateDrivePreset("asym"), DRIVE_DEFAULT_AMOUNT),
+      );
+
+      engine.setDriveCurve(generateDrivePreset("soft"), false);
+      engine.setDriveCurve(generateDrivePreset("hard"), false);
+      assert.equal(timers.size, 1);
+      const beforeCommit = drive.curveAssignments.length;
+      engine.setDriveCurve(generateDrivePreset("hard"), true);
+      assert.equal(timers.size, 0);
+      assert.equal(drive.curveAssignments.length, beforeCommit + 1);
+      assert.deepEqual(
+        drive.curve,
+        buildAppliedDriveCurve(generateDrivePreset("hard"), DRIVE_DEFAULT_AMOUNT),
+      );
+    } finally {
+      engine?.dispose();
+      Object.assign(globalThis, {
+        AudioContext: originalAudioContext,
+        window: originalWindow,
+      });
+    }
+  });
+
   it("orders DRIVE, CHORUS, SPACE, and final safety without replacing a held note", () => {
     const originalAudioContext = globalThis.AudioContext;
     const originalWindow = globalThis.window;
+    let engine: SynthEngine | null = null;
     let nextTimer = 1;
     let timerCalls = 0;
     const timers = new Map<number, () => void>();
@@ -487,7 +693,7 @@ describe("combined live audio graph", () => {
     });
 
     try {
-      const engine = new SynthEngine();
+      engine = new SynthEngine();
       const voiceEvents: number[][] = [];
       const readyEvents: boolean[] = [];
       engine.onVoices((notes) => voiceEvents.push(notes));
@@ -510,7 +716,16 @@ describe("combined live audio graph", () => {
       assert.notEqual(drive, safety);
       assert.equal(lowPass.type, "lowpass");
       assert.equal(lowPass.connections.length, 1);
-      assert.equal(lowPass.connections[0], drive);
+      const sharedBus = lowPass.connections[0];
+      assert.ok(sharedBus instanceof TestGainNode);
+      assert.equal(sharedBus.connections.length, 1);
+
+      const driveInputAnalyser = sharedBus.connections[0];
+      assert.ok(driveInputAnalyser instanceof TestAnalyserNode);
+      assert.equal(driveInputAnalyser.fftSize, 1024);
+      assert.equal(driveInputAnalyser.smoothingTimeConstant, 0);
+      assert.equal(driveInputAnalyser.connections.length, 1);
+      assert.equal(driveInputAnalyser.connections[0], drive);
       assert.equal(drive.oversample, DRIVE_OVERSAMPLE);
       assert.equal(drive.connections.length, 1, "DRIVE must not use a parallel dry path");
       assert.equal(drive.connections[0], dcBlock);
@@ -521,15 +736,12 @@ describe("combined live audio graph", () => {
 
       const driveGuard = dcBlock.connections[0];
       assert.ok(driveGuard instanceof TestGainNode);
-      assert.equal(driveGuard.connections.length, 1);
+      assert.equal(driveGuard.connections.length, 3);
       assert.equal(driveGuard.gain.value, 1);
-      const sharedBus = driveGuard.connections[0];
-      assert.ok(sharedBus instanceof TestGainNode);
-      assert.equal(sharedBus.connections.length, 3);
 
-      const chorusDry = sharedBus.connections[0];
-      const chorusDelayL = sharedBus.connections[1];
-      const chorusDelayR = sharedBus.connections[2];
+      const chorusDry = driveGuard.connections[0];
+      const chorusDelayL = driveGuard.connections[1];
+      const chorusDelayR = driveGuard.connections[2];
       assert.ok(chorusDry instanceof TestGainNode);
       assert.ok(chorusDelayL instanceof TestDelayNode);
       assert.ok(chorusDelayR instanceof TestDelayNode);
@@ -582,6 +794,13 @@ describe("combined live audio graph", () => {
       const outputAnalyser = safety.connections[0];
       assert.ok(outputAnalyser instanceof TestAnalyserNode);
       assert.equal(outputAnalyser.connections[0], context.destination);
+      assert.equal(context.analysers.length, 3);
+
+      driveInputAnalyser.setSamples([-0.42, 0.61, -0.18, 0.2]);
+      assert.deepEqual(engine.measureDriveInputRange(), {
+        min: -0.41999998688697815,
+        max: 0.6100000143051147,
+      });
 
       assert.equal(context.delays.length, 2);
       assert.equal(context.constantSources.length, 2);
@@ -799,6 +1018,7 @@ describe("combined live audio graph", () => {
       assert.deepEqual(readyEvents, [true, false, true]);
       engine.dispose();
     } finally {
+      engine?.dispose();
       Object.assign(globalThis, {
         AudioContext: originalAudioContext,
         window: originalWindow,

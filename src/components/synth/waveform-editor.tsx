@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   readCanvasTreatmentTokens,
   type CanvasTreatmentTokens,
 } from "@/lib/presentation/canvas-tokens";
 import { useTreatment } from "@/lib/presentation/treatment";
+import { editorPlotInsets } from "@/lib/presentation/editor-layout";
 import { useSynthStore, type EditorDomain } from "@/lib/synth/store";
 import { WAVE_SIZE } from "@/lib/synth/waveform";
 import {
@@ -23,17 +24,19 @@ import {
   chorusDelayMs,
   phaseShiftCurve,
 } from "@/lib/synth/chorus";
-import { synth } from "@/lib/synth/engine";
+import { CURVE_UPDATE_INTERVAL_MS, synth } from "@/lib/synth/engine";
 import { cn } from "@/lib/utils";
 import { EditorTabs } from "./editor-tabs";
-
-const PAD_X = 44;
-const PAD_Y = 40;
 
 type DrawingDomain = Exclude<EditorDomain, "motion">;
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
+}
+
+function signedLevel(value: number) {
+  const normalized = Math.abs(value) < 0.005 ? 0 : value;
+  return `${normalized < 0 ? "−" : "+"}${Math.abs(normalized).toFixed(2)}`;
 }
 
 function drawPlotGrid(
@@ -82,6 +85,7 @@ function wrapSample(wave: number[], i: number) {
 
 export function WaveformEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [driveInputRange, setDriveInputRange] = useState({ min: 0, max: 0 });
   const domain = useSynthStore((s) => s.domain);
   const { treatment } = useTreatment();
   const samples = useSynthStore((s) => s.samples);
@@ -158,8 +162,7 @@ export function WaveformEditor() {
     ctx.fillStyle = tokens.plot;
     ctx.fillRect(0, 0, w, h);
 
-    const padX = PAD_X;
-    const padY = PAD_Y;
+    const { x: padX, y: padY } = editorPlotInsets(w, h);
     const innerW = w - padX * 2;
     const innerH = h - padY * 2;
     const yAt = (v: number) => padY + (0.5 - v * 0.5) * innerH;
@@ -273,41 +276,59 @@ export function WaveformEditor() {
       ctx.stroke();
       ctx.restore();
 
-      if (appliedAmount < 1) {
-        const applied = buildAppliedDriveCurve(curve, appliedAmount, n);
+      const strokeTransfer = (
+        values: ArrayLike<number>,
+        color: string,
+        width: number,
+        dashed: boolean,
+        glow: number,
+      ) => {
         ctx.save();
-        ctx.globalAlpha = tokens.ghostAlpha;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
-        ctx.strokeStyle = tokens.traceSecondary;
-        ctx.lineWidth = tokens.ghostWidth;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = glow;
+        if (dashed) ctx.setLineDash([7, 4]);
         ctx.beginPath();
-        for (let i = 0; i < applied.length; i++) {
+        for (let i = 0; i < values.length; i++) {
           const x = xAt(i);
-          const y = yAt(applied[i] ?? 0);
+          const y = yAt(values[i] ?? 0);
           if (i === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
         ctx.stroke();
         ctx.restore();
-      }
+      };
 
-      ctx.save();
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.strokeStyle = tokens.tracePrimary;
-      ctx.lineWidth = tokens.traceWidth;
-      ctx.shadowColor = tokens.tracePrimary;
-      ctx.shadowBlur = tokens.traceGlow;
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        const x = xAt(i);
-        const y = yAt(curve[i] ?? 0);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+      if (appliedAmount < 1) {
+        const applied = buildAppliedDriveCurve(curve, appliedAmount, n);
+        // Authored stays visibly editable; applied carries equal visual weight
+        // and a solid treatment so it cannot read as decorative ghosting.
+        strokeTransfer(
+          curve,
+          tokens.traceSecondary,
+          Math.max(1.6, tokens.traceWidth),
+          true,
+          0,
+        );
+        strokeTransfer(
+          applied,
+          tokens.tracePrimary,
+          tokens.traceWidth + 0.65,
+          false,
+          tokens.traceGlow,
+        );
+      } else {
+        strokeTransfer(
+          curve,
+          tokens.tracePrimary,
+          tokens.traceWidth,
+          false,
+          tokens.traceGlow,
+        );
       }
-      ctx.stroke();
-      ctx.restore();
 
       ctx.fillStyle = tokens.annotation;
       ctx.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
@@ -322,6 +343,23 @@ export function WaveformEditor() {
       ctx.fillText("0", padX + innerW * 0.5, padY + innerH + 8);
       ctx.textAlign = "right";
       ctx.fillText("+1 in", padX + innerW, padY + innerH + 8);
+
+      ctx.font = "10px 'IBM Plex Mono', ui-monospace, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      if (appliedAmount < 1) {
+        ctx.fillStyle = tokens.traceSecondary;
+        ctx.fillText("AUTHORED — —", padX + 8, padY + 8);
+        ctx.fillStyle = tokens.tracePrimary;
+        ctx.fillText(
+          `APPLIED ${Math.round(appliedAmount * 100)}%`,
+          padX + 8,
+          padY + 23,
+        );
+      } else {
+        ctx.fillStyle = tokens.tracePrimary;
+        ctx.fillText("AUTHORED = APPLIED", padX + 8, padY + 8);
+      }
     } else if (chorus) {
       const curve = chorusRef.current;
       const n = curve.length || CHORUS_SIZE;
@@ -498,6 +536,22 @@ export function WaveformEditor() {
     return () => ro.disconnect();
   }, [paint]);
 
+  useEffect(() => {
+    if (domain !== "drive") return;
+    const sample = () => {
+      const next = synth.measureDriveInputRange();
+      setDriveInputRange((current) =>
+        Math.abs(current.min - next.min) < 0.005 &&
+        Math.abs(current.max - next.max) < 0.005
+          ? current
+          : next,
+      );
+    };
+    sample();
+    const timer = window.setInterval(sample, CURVE_UPDATE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [domain]);
+
   const eventToHit = (
     e: React.PointerEvent<HTMLCanvasElement>,
     targetDomain: DrawingDomain,
@@ -505,10 +559,11 @@ export function WaveformEditor() {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    const innerW = rect.width - PAD_X * 2;
-    const innerH = rect.height - PAD_Y * 2;
-    const x = clamp((e.clientX - rect.left - PAD_X) / innerW, 0, 1);
-    const y = clamp((e.clientY - rect.top - PAD_Y) / innerH, 0, 1);
+    const { x: padX, y: padY } = editorPlotInsets(rect.width, rect.height);
+    const innerW = Math.max(1, rect.width - padX * 2);
+    const innerH = Math.max(1, rect.height - padY * 2);
+    const x = clamp((e.clientX - rect.left - padX) / innerW, 0, 1);
+    const y = clamp((e.clientY - rect.top - padY) / innerH, 0, 1);
     if (targetDomain === "space") {
       const index = clamp(Math.round(x * (SPACE_SIZE - 1)), 0, SPACE_SIZE - 1);
       return { index, value: clamp(1 - y, 0, 1), size: SPACE_SIZE };
@@ -674,7 +729,7 @@ export function WaveformEditor() {
   const title = space
     ? "Space · impulse response"
     : drive
-      ? "Drive · authored transfer"
+      ? "Drive · authored + applied transfer"
       : chorus
         ? "Chorus · delay-time cycle"
         : `Oscillator · ${morphArmed && !morphLive ? "custom" : "1 cycle"}`;
@@ -682,18 +737,23 @@ export function WaveformEditor() {
 
   return (
     <div className="relative flex min-h-32 flex-1 flex-col overflow-hidden rounded-xl bg-plot shadow-border md:min-h-0">
-      <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex min-w-0 items-start justify-between gap-3">
+      <div className="phosphor-editor-status pointer-events-none absolute inset-x-3 top-2 z-10 flex min-w-0 items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <EditorTabs />
-          <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-faint sm:inline">
+          <span className="phosphor-editor-title hidden font-mono text-[10px] uppercase tracking-[0.18em] text-faint sm:inline">
             {title}
           </span>
         </div>
-        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
+        <span className="phosphor-editor-status-detail shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
           {space
             ? `0 s → ${spaceSeconds.toFixed(1)} s`
             : drive
-              ? `${driveSafe ? "SAFE" : "SAFE OFF"} · ${appliedDrivePercent}%`
+              ? <>
+                  <span className="hidden sm:inline">
+                    {driveSafe ? "SAFE" : "SAFE OFF"} · {appliedDrivePercent}% ·{" "}
+                  </span>
+                  IN {signedLevel(driveInputRange.min)}…{signedLevel(driveInputRange.max)}
+                </>
               : chorus
                 ? `${CHORUS_MIN_MS} ↔ ${CHORUS_MAX_MS} ms`
                 : "−1 ↔ +1"}
@@ -711,7 +771,7 @@ export function WaveformEditor() {
             ? "Draw space impulse response"
             : drive
               ? appliedDriveAmount < 1
-                ? `Draw authored drive transfer function. Secondary trace shows ${appliedDrivePercent}% applied; Safe mode ${driveSafe ? "on" : "off"}.`
+                ? `Draw authored drive transfer function. Dashed trace is authored; solid trace shows ${appliedDrivePercent}% applied. Safe mode ${driveSafe ? "on" : "off"}.`
                 : "Draw authored drive transfer function. The authored transfer is fully applied; Safe mode off."
               : chorus
                 ? "Draw chorus delay-time modulation"

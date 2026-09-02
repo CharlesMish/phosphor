@@ -346,13 +346,14 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   setLiveDrive: (curve) => {
-    const { driveAmount, driveSafe } = get();
     set({
       driveCurve: curve,
       drivePreset: "custom",
       driveHasDrawn: true,
     });
-    applyDrive(curve, driveAmount, driveSafe);
+    // Keep pointer rendering/store state immediate while coalescing the costly
+    // WaveShaper table assignment to the same cadence as CYCLE drawing.
+    synth.setDriveCurve(curve, false);
   },
 
   finishDriveGesture: (before, after) => {

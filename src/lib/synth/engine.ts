@@ -22,17 +22,41 @@ import {
   chorusMixGains,
 } from "./chorus";
 
-const MAX_VOICES = 12;
-const VOICE_GAIN = 0.22;
+export const MAX_VOICES = 12;
+export const VOICE_GAIN = 0.22;
+export const OSCILLATOR_SAMPLE_TARGET = 0.9;
+export const VOICE_REBALANCE_PEAK = 0.9;
 const CROSSFADE = 0.02;
 const SPACE_FADE = 0.07;
-const WAVE_THROTTLE_MS = 32;
+export const CURVE_UPDATE_INTERVAL_MS = 32;
 const MIN_ATTACK = 0.004;
 const MIN_RELEASE = 0.03;
 const CHORUS_FADE = 0.03;
 const DRIVE_GUARD_FADE = 0.03;
 const DRIVE_SAFE_RAMP_MS = 128;
 const DRIVE_SAFE_RAMP_STEPS = 32;
+
+export type SignalRange = { min: number; max: number };
+
+export function voiceRebalanceGain(voiceCount: number): number {
+  // More than MAX_VOICES can be connected briefly while release/steal tails
+  // finish, even though no more than MAX_VOICES are held at once.
+  const n = Math.max(1, Math.floor(voiceCount));
+  return VOICE_REBALANCE_PEAK / Math.sqrt(n);
+}
+
+/**
+ * Phase-aligned pre-DRIVE peak for a caller-supplied oscillator peak and the
+ * established voice/rebalance gains. The default is the sample-conditioning
+ * target; QA probes pass the reconstructed PeriodicWave peak explicitly.
+ */
+export function phaseAlignedPreDrivePeak(
+  voiceCount: number,
+  oscillatorPeak = OSCILLATOR_SAMPLE_TARGET,
+): number {
+  const n = Math.max(1, Math.min(MAX_VOICES, Math.floor(voiceCount)));
+  return n * oscillatorPeak * VOICE_GAIN * voiceRebalanceGain(n);
+}
 
 export const DRIVE_DC_BLOCK_HZ = 10;
 export const DRIVE_OVERSAMPLE: OverSampleType = "4x";
@@ -98,10 +122,28 @@ function analyserPeak(analyser: AnalyserNode | null): number {
   return peak;
 }
 
+function analyserRange(
+  analyser: AnalyserNode | null,
+  data: Float32Array<ArrayBuffer> | null,
+): SignalRange {
+  if (!analyser || !data) return { min: 0, max: 0 };
+  analyser.getFloatTimeDomainData(data);
+  let min = data[0] ?? 0;
+  let max = min;
+  for (let i = 1; i < data.length; i++) {
+    const value = data[i] ?? 0;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return { min, max };
+}
+
 export class SynthEngine {
   private ctx: AudioContext | null = null;
   private filter: BiquadFilterNode | null = null;
   private drive: WaveShaperNode | null = null;
+  private driveInputAnalyser: AnalyserNode | null = null;
+  private driveInputData: Float32Array<ArrayBuffer> | null = null;
   private driveDcBlock: BiquadFilterNode | null = null;
   private driveGuard: GainNode | null = null;
   private bus: GainNode | null = null;
@@ -149,6 +191,9 @@ export class SynthEngine {
   private driveCurve = buildAppliedDriveCurve([], this.driveAppliedAmount);
   private driveRampTimers: number[] = [];
   private driveRampVersion = 0;
+  private driveCurveTimer: number | null = null;
+  private pendingDriveCurve: number[] | null = null;
+  private lastDriveCurveAt = 0;
   private lastWaveAt = 0;
   private pendingSamples: number[] | null = null;
   private space: SpaceSpec | null = null;
@@ -158,6 +203,7 @@ export class SynthEngine {
   private readyListeners = new Set<(ready: boolean) => void>();
   private preSafetyAnalyser: AnalyserNode | null = null;
   private safety: WaveShaperNode | null = null;
+  private rebalanceTarget = 1;
   ready = false;
 
   onVoices(fn: (active: number[]) => void): () => void {
@@ -180,6 +226,11 @@ export class SynthEngine {
 
   measurePeak(): number {
     return analyserPeak(this.analyser);
+  }
+
+  /** Measured signal range in the single, rebalanced domain entering DRIVE. */
+  measureDriveInputRange(): SignalRange {
+    return analyserRange(this.driveInputAnalyser, this.driveInputData);
   }
 
   /** Peak immediately before final safety; useful for gain-staging QA. */
@@ -272,8 +323,26 @@ export class SynthEngine {
     this.chorusBiasR?.offset.setValueAtTime(midpoint + leftSpec.bias * depth, now);
   }
 
-  setDriveCurve(authored: number[]) {
-    this.setDriveState(authored, this.driveAmount, this.driveSafe);
+  setDriveCurve(authored: number[], immediate = true) {
+    if (immediate || !this.ctx || typeof window === "undefined") {
+      this.cancelDriveCurveUpdate();
+      this.lastDriveCurveAt =
+        typeof performance !== "undefined" ? performance.now() : 0;
+      this.setDriveState(authored, this.driveAmount, this.driveSafe);
+      return;
+    }
+
+    this.pendingDriveCurve = authored.slice();
+    if (this.driveCurveTimer !== null) return;
+    const now = typeof performance !== "undefined" ? performance.now() : 0;
+    const wait = Math.max(
+      0,
+      CURVE_UPDATE_INTERVAL_MS - (now - this.lastDriveCurveAt),
+    );
+    this.driveCurveTimer = window.setTimeout(() => {
+      this.driveCurveTimer = null;
+      this.flushDriveCurve();
+    }, wait);
   }
 
   /**
@@ -288,6 +357,7 @@ export class SynthEngine {
     safe: boolean,
     smoothAmount = false,
   ) {
+    this.cancelDriveCurveUpdate();
     const targetAmount = effectiveDriveAmount(amount, safe);
     const previousAppliedAmount = this.driveAppliedAmount;
     const continueReduction =
@@ -345,7 +415,7 @@ export class SynthEngine {
       return;
     }
     const now = typeof performance !== "undefined" ? performance.now() : 0;
-    const wait = Math.max(0, WAVE_THROTTLE_MS - (now - this.lastWaveAt));
+    const wait = Math.max(0, CURVE_UPDATE_INTERVAL_MS - (now - this.lastWaveAt));
     if (this.waveTimer !== null) return;
     if (typeof window === "undefined") {
       this.flushWaveform();
@@ -420,6 +490,7 @@ export class SynthEngine {
   dispose() {
     this.allNotesOff();
     this.cancelDriveRamp();
+    this.cancelDriveCurveUpdate();
     if (this.waveTimer !== null && typeof window !== "undefined") {
       window.clearTimeout(this.waveTimer);
     }
@@ -449,6 +520,8 @@ export class SynthEngine {
     this.ctx = null;
     this.filter = null;
     this.drive = null;
+    this.driveInputAnalyser = null;
+    this.driveInputData = null;
     this.driveDcBlock = null;
     this.driveGuard = null;
     this.bus = null;
@@ -475,6 +548,7 @@ export class SynthEngine {
     this.wave = null;
     this.spaceReady = false;
     this.spaceFadeUntil = 0;
+    this.rebalanceTarget = 1;
     const wasReady = this.ready;
     this.ready = false;
     if (wasReady) this.readyListeners.forEach((fn) => fn(false));
@@ -493,19 +567,24 @@ export class SynthEngine {
     drive.curve = this.driveCurve;
     drive.oversample = DRIVE_OVERSAMPLE;
 
+    const driveInputAnalyser = ctx.createAnalyser();
+    driveInputAnalyser.fftSize = 1024;
+    driveInputAnalyser.smoothingTimeConstant = 0;
+
     const driveDcBlock = ctx.createBiquadFilter();
     driveDcBlock.type = "highpass";
     driveDcBlock.frequency.value = DRIVE_DC_BLOCK_HZ;
     driveDcBlock.Q.value = Math.SQRT1_2;
 
     // SAFE's deterministic, attenuation-only guard belongs to the DRIVE stage.
-    // It sits after the 10 Hz DC blocker and before voice rebalance/CHORUS; the
-    // separate final safety WaveShaper remains untouched at the output.
+    // It sits after the 10 Hz DC blocker and before CHORUS; the separate final
+    // safety WaveShaper remains untouched at the output.
     const driveGuard = ctx.createGain();
     driveGuard.gain.value = driveGuardGain(this.driveCurve, this.driveSafe);
 
     const bus = ctx.createGain();
     bus.gain.value = 1;
+    this.rebalanceTarget = 1;
 
     const chorusDry = ctx.createGain();
     const chorusWet = ctx.createGain();
@@ -535,9 +614,9 @@ export class SynthEngine {
     lfoR.connect(lfoGainR).connect(chorusDelayR.delayTime);
     delayBiasL.connect(chorusDelayL.delayTime);
     delayBiasR.connect(chorusDelayR.delayTime);
-    bus.connect(chorusDry);
-    bus.connect(chorusDelayL);
-    bus.connect(chorusDelayR);
+    driveGuard.connect(chorusDry);
+    driveGuard.connect(chorusDelayL);
+    driveGuard.connect(chorusDelayR);
     chorusDelayL.connect(merger, 0, 0);
     chorusDelayR.connect(merger, 0, 1);
     const chorusSum = ctx.createGain();
@@ -581,10 +660,14 @@ export class SynthEngine {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.1;
 
-    filter.connect(drive);
+    // DRIVE has one honest input domain: the filtered, voice-rebalanced bus.
+    // Rebalancing here preserves the pre-DRIVE baseline gain law and prevents
+    // the musical WaveShaper from endpoint-clamping a raw polyphonic sum.
+    filter.connect(bus);
+    bus.connect(driveInputAnalyser);
+    driveInputAnalyser.connect(drive);
     drive.connect(driveDcBlock);
     driveDcBlock.connect(driveGuard);
-    driveGuard.connect(bus);
     chorusSum.connect(dryGain);
     chorusSum.connect(wetIn);
     wetIn.connect(convA);
@@ -602,6 +685,8 @@ export class SynthEngine {
 
     this.filter = filter;
     this.drive = drive;
+    this.driveInputAnalyser = driveInputAnalyser;
+    this.driveInputData = new Float32Array(driveInputAnalyser.fftSize);
     this.driveDcBlock = driveDcBlock;
     this.driveGuard = driveGuard;
     this.bus = bus;
@@ -686,6 +771,23 @@ export class SynthEngine {
     this.driveRampTimers = [];
   }
 
+  private cancelDriveCurveUpdate() {
+    if (this.driveCurveTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(this.driveCurveTimer);
+    }
+    this.driveCurveTimer = null;
+    this.pendingDriveCurve = null;
+  }
+
+  private flushDriveCurve() {
+    const curve = this.pendingDriveCurve;
+    if (!curve) return;
+    this.pendingDriveCurve = null;
+    this.lastDriveCurveAt =
+      typeof performance !== "undefined" ? performance.now() : 0;
+    this.setDriveState(curve, this.driveAmount, this.driveSafe);
+  }
+
   private flushSpace() {
     const pending = this.pendingSpace;
     if (!pending || !this.ctx || !this.convA || !this.convB || !this.wetA || !this.wetB) return;
@@ -748,7 +850,7 @@ export class SynthEngine {
     if (!samples || !this.ctx) return;
     this.lastWaveAt = typeof performance !== "undefined" ? performance.now() : 0;
 
-    const conditioned = normalizeWave(samples, 0.9);
+    const conditioned = normalizeWave(samples, OSCILLATOR_SAMPLE_TARGET);
     const { real, imag } = waveformToCoefficients(conditioned, HARMONIC_COUNT);
     const wave = this.ctx.createPeriodicWave(real, imag, { disableNormalization: true });
     this.wave = wave;
@@ -867,12 +969,30 @@ export class SynthEngine {
 
   private rebalance(now: number) {
     if (!this.bus) return;
-    const n = Math.max(
-      1,
-      [...this.voices.values()].filter((v) => !v.releasing).length,
-    );
-    const level = 0.9 / Math.sqrt(n);
-    this.bus.gain.setTargetAtTime(level, now, 0.04);
+    // Releasing voices remain audible until finishVoice removes them. Counting
+    // them prevents recovery from outrunning the release envelope in front of
+    // DRIVE; short stolen/retriggered tails retain ample 12-voice headroom.
+    const n = Math.max(1, this.voices.size);
+    const level = voiceRebalanceGain(n);
+    const gain = this.bus.gain;
+    if (level < this.rebalanceTarget) {
+      // Note additions need headroom before their attacks rise. A 40 ms target
+      // here would leave the old, hotter gain in front of DRIVE for the chord
+      // transient, defeating the purpose of moving the rebalance stage.
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(level, now);
+    } else if (level > this.rebalanceTarget) {
+      // Recover smoothly when voices leave so releases do not cause gain jumps.
+      if (typeof gain.cancelAndHoldAtTime === "function") {
+        gain.cancelAndHoldAtTime(now);
+      } else {
+        const current = gain.value;
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(current, now);
+      }
+      gain.setTargetAtTime(level, now, 0.04);
+    }
+    this.rebalanceTarget = level;
   }
 
   private emitVoices() {

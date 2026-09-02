@@ -17,6 +17,7 @@ import { ChorusBar } from "./chorus-bar";
 
 type PhosphorDebug = {
   peak: () => number;
+  driveInputRange: () => { min: number; max: number };
   mix: () => number;
   length: () => number;
   domain: () => string;
@@ -50,6 +51,7 @@ export function PhosphorApp() {
     const w = window as Window & { __phosphor?: PhosphorDebug };
     w.__phosphor = {
       peak: () => synth.measurePeak(),
+      driveInputRange: () => synth.measureDriveInputRange(),
       mix: () => useSynthStore.getState().spaceMix,
       length: () => useSynthStore.getState().spaceSeconds,
       domain: () => useSynthStore.getState().domain,

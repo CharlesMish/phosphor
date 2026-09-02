@@ -338,3 +338,19 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@media (max-height: 700px) {
+  .phosphor-editor-status {
+    inset-inline: 0.5rem;
+    top: 0.25rem;
+  }
+
+  .phosphor-editor-title {
+    display: none;
+  }
+
+  .phosphor-editor-status-detail {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+  }
+}
