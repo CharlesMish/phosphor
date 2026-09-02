@@ -4,18 +4,69 @@ import {
   waveformToCoefficients,
 } from "./waveform";
 import { midiToHz } from "./keyboard-map";
-import { buildSpaceBuffer } from "./space";
+import { SPACE_DEFAULT_SECONDS, buildSpaceBuffer } from "./space";
 import { buildOutputSafetyCurve } from "./safety";
+import {
+  DRIVE_DEFAULT_AMOUNT,
+  DRIVE_DEFAULT_SAFE,
+  buildAppliedDriveCurve,
+  clampDriveAmount,
+  driveGuardGain,
+  effectiveDriveAmount,
+} from "./drive";
+import {
+  CHORUS_DEFAULT_PERIOD,
+  CHORUS_MAX_MS,
+  CHORUS_MIN_MS,
+  buildChorusPeriodicWave,
+  chorusMixGains,
+} from "./chorus";
 
-const MAX_VOICES = 12;
-const VOICE_GAIN = 0.22;
+export const MAX_VOICES = 12;
+export const VOICE_GAIN = 0.22;
+export const OSCILLATOR_SAMPLE_TARGET = 0.9;
+export const VOICE_REBALANCE_PEAK = 0.9;
 const CROSSFADE = 0.02;
 const SPACE_FADE = 0.07;
-const WAVE_THROTTLE_MS = 32;
+export const CURVE_UPDATE_INTERVAL_MS = 32;
 const MIN_ATTACK = 0.004;
 const MIN_RELEASE = 0.03;
+const CHORUS_FADE = 0.03;
+const DRIVE_GUARD_FADE = 0.03;
+const DRIVE_SAFE_RAMP_MS = 128;
+const DRIVE_SAFE_RAMP_STEPS = 32;
 
-type SpaceSpec = { contour: number[]; seed: number; metal: boolean };
+export type SignalRange = { min: number; max: number };
+
+export function voiceRebalanceGain(voiceCount: number): number {
+  // More than MAX_VOICES can be connected briefly while release/steal tails
+  // finish, even though no more than MAX_VOICES are held at once.
+  const n = Math.max(1, Math.floor(voiceCount));
+  return VOICE_REBALANCE_PEAK / Math.sqrt(n);
+}
+
+/**
+ * Phase-aligned pre-DRIVE peak for a caller-supplied oscillator peak and the
+ * established voice/rebalance gains. The default is the sample-conditioning
+ * target; QA probes pass the reconstructed PeriodicWave peak explicitly.
+ */
+export function phaseAlignedPreDrivePeak(
+  voiceCount: number,
+  oscillatorPeak = OSCILLATOR_SAMPLE_TARGET,
+): number {
+  const n = Math.max(1, Math.min(MAX_VOICES, Math.floor(voiceCount)));
+  return n * oscillatorPeak * VOICE_GAIN * voiceRebalanceGain(n);
+}
+
+export const DRIVE_DC_BLOCK_HZ = 10;
+export const DRIVE_OVERSAMPLE: OverSampleType = "4x";
+
+type SpaceSpec = {
+  contour: number[];
+  seed: number;
+  metal: boolean;
+  seconds: number;
+};
 
 type Voice = {
   midi: number;
@@ -71,10 +122,42 @@ function analyserPeak(analyser: AnalyserNode | null): number {
   return peak;
 }
 
+function analyserRange(
+  analyser: AnalyserNode | null,
+  data: Float32Array<ArrayBuffer> | null,
+): SignalRange {
+  if (!analyser || !data) return { min: 0, max: 0 };
+  analyser.getFloatTimeDomainData(data);
+  let min = data[0] ?? 0;
+  let max = min;
+  for (let i = 1; i < data.length; i++) {
+    const value = data[i] ?? 0;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return { min, max };
+}
+
 export class SynthEngine {
   private ctx: AudioContext | null = null;
   private filter: BiquadFilterNode | null = null;
+  private drive: WaveShaperNode | null = null;
+  private driveInputAnalyser: AnalyserNode | null = null;
+  private driveInputData: Float32Array<ArrayBuffer> | null = null;
+  private driveDcBlock: BiquadFilterNode | null = null;
+  private driveGuard: GainNode | null = null;
   private bus: GainNode | null = null;
+  private chorusDry: GainNode | null = null;
+  private chorusWet: GainNode | null = null;
+  private chorusSum: GainNode | null = null;
+  private chorusDelayL: DelayNode | null = null;
+  private chorusDelayR: DelayNode | null = null;
+  private chorusLfoL: OscillatorNode | null = null;
+  private chorusLfoR: OscillatorNode | null = null;
+  private chorusBiasL: ConstantSourceNode | null = null;
+  private chorusBiasR: ConstantSourceNode | null = null;
+  private chorusPeriod = CHORUS_DEFAULT_PERIOD;
+  private chorusCurve: number[] | null = null;
   private master: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
   private dryGain: GainNode | null = null;
@@ -97,6 +180,20 @@ export class SynthEngine {
     cutoff: 1,
   };
   private spaceMix = 0.38;
+  private chorusMix = 0;
+  private driveAuthoredCurve: number[] = [];
+  private driveAmount = DRIVE_DEFAULT_AMOUNT;
+  private driveSafe = DRIVE_DEFAULT_SAFE;
+  private driveAppliedAmount = effectiveDriveAmount(
+    DRIVE_DEFAULT_AMOUNT,
+    DRIVE_DEFAULT_SAFE,
+  );
+  private driveCurve = buildAppliedDriveCurve([], this.driveAppliedAmount);
+  private driveRampTimers: number[] = [];
+  private driveRampVersion = 0;
+  private driveCurveTimer: number | null = null;
+  private pendingDriveCurve: number[] | null = null;
+  private lastDriveCurveAt = 0;
   private lastWaveAt = 0;
   private pendingSamples: number[] | null = null;
   private space: SpaceSpec | null = null;
@@ -106,6 +203,7 @@ export class SynthEngine {
   private readyListeners = new Set<(ready: boolean) => void>();
   private preSafetyAnalyser: AnalyserNode | null = null;
   private safety: WaveShaperNode | null = null;
+  private rebalanceTarget = 1;
   ready = false;
 
   onVoices(fn: (active: number[]) => void): () => void {
@@ -128,6 +226,11 @@ export class SynthEngine {
 
   measurePeak(): number {
     return analyserPeak(this.analyser);
+  }
+
+  /** Measured signal range in the single, rebalanced domain entering DRIVE. */
+  measureDriveInputRange(): SignalRange {
+    return analyserRange(this.driveInputAnalyser, this.driveInputData);
   }
 
   /** Peak immediately before final safety; useful for gain-staging QA. */
@@ -169,8 +272,135 @@ export class SynthEngine {
     this.applyMix();
   }
 
-  setSpace(contour: number[], seed: number, metal = false) {
-    const next = { contour, seed, metal };
+  setChorusMix(mix: number) {
+    this.chorusMix = Math.min(1, Math.max(0, mix));
+    this.applyChorusMix();
+  }
+
+  setChorusPeriod(period: number) {
+    this.chorusPeriod = Math.min(4, Math.max(0.25, period));
+    const now = this.ctx?.currentTime ?? 0;
+    this.chorusLfoL?.frequency.setTargetAtTime(1 / this.chorusPeriod, now, 0.02);
+    this.chorusLfoR?.frequency.setTargetAtTime(1 / this.chorusPeriod, now, 0.02);
+  }
+
+  setChorusCurve(curve: number[]) {
+    this.chorusCurve = curve.slice();
+    if (!this.ctx || !this.chorusLfoL || !this.chorusLfoR) return;
+    const leftSpec = buildChorusPeriodicWave(
+      curve,
+      Math.min(HARMONIC_COUNT, curve.length / 2),
+    );
+    const left = this.ctx.createPeriodicWave(
+      leftSpec.real,
+      leftSpec.imag,
+      { disableNormalization: true },
+    );
+    // A half-cycle stereo shift multiplies every odd harmonic by -1. Derive it
+    // directly so live drawing does not repeat the DFT and extrema proof.
+    const rightReal = new Float32Array(leftSpec.real);
+    const rightImag = new Float32Array(leftSpec.imag);
+    for (let k = 1; k < rightReal.length; k += 2) {
+      rightReal[k] = -(rightReal[k] ?? 0);
+      rightImag[k] = -(rightImag[k] ?? 0);
+    }
+    const right = this.ctx.createPeriodicWave(
+      rightReal,
+      rightImag,
+      { disableNormalization: true },
+    );
+    this.chorusLfoL.setPeriodicWave(left);
+    this.chorusLfoR.setPeriodicWave(right);
+    const now = this.ctx.currentTime;
+    const midpoint = (CHORUS_MAX_MS + CHORUS_MIN_MS) / 2000;
+    const depth = (CHORUS_MAX_MS - CHORUS_MIN_MS) / 2000;
+    // PeriodicWave replacement is immediate, so its separately represented DC
+    // bias must change at the same time. Easing only one half can temporarily
+    // push the summed delay outside 8–24 ms.
+    this.chorusBiasL?.offset.cancelScheduledValues(now);
+    this.chorusBiasR?.offset.cancelScheduledValues(now);
+    this.chorusBiasL?.offset.setValueAtTime(midpoint + leftSpec.bias * depth, now);
+    this.chorusBiasR?.offset.setValueAtTime(midpoint + leftSpec.bias * depth, now);
+  }
+
+  setDriveCurve(authored: number[], immediate = true) {
+    if (immediate || !this.ctx || typeof window === "undefined") {
+      this.cancelDriveCurveUpdate();
+      this.lastDriveCurveAt =
+        typeof performance !== "undefined" ? performance.now() : 0;
+      this.setDriveState(authored, this.driveAmount, this.driveSafe);
+      return;
+    }
+
+    this.pendingDriveCurve = authored.slice();
+    if (this.driveCurveTimer !== null) return;
+    const now = typeof performance !== "undefined" ? performance.now() : 0;
+    const wait = Math.max(
+      0,
+      CURVE_UPDATE_INTERVAL_MS - (now - this.lastDriveCurveAt),
+    );
+    this.driveCurveTimer = window.setTimeout(() => {
+      this.driveCurveTimer = null;
+      this.flushDriveCurve();
+    }, wait);
+  }
+
+  /**
+   * Applies playback parameters without changing the authored transfer.
+   * `smoothAmount` is reserved for SAFE re-entry: WaveShaper.curve is not an
+   * AudioParam, so the same single shaper receives a short sequence of derived
+   * curves instead of introducing a latency-mismatched parallel dry path.
+   */
+  setDriveState(
+    authored: number[],
+    amount: number,
+    safe: boolean,
+    smoothAmount = false,
+  ) {
+    this.cancelDriveCurveUpdate();
+    const targetAmount = effectiveDriveAmount(amount, safe);
+    const previousAppliedAmount = this.driveAppliedAmount;
+    const continueReduction =
+      this.driveRampTimers.length > 0 && targetAmount < previousAppliedAmount;
+    this.cancelDriveRamp();
+    this.driveAuthoredCurve = authored.slice();
+    this.driveAmount = safe ? targetAmount : clampDriveAmount(amount);
+    this.driveSafe = safe;
+
+    if (
+      (smoothAmount || continueReduction) &&
+      targetAmount < previousAppliedAmount &&
+      this.ctx &&
+      this.drive &&
+      typeof window !== "undefined"
+    ) {
+      this.applyDriveAmount(previousAppliedAmount);
+      const version = this.driveRampVersion;
+      for (let step = 1; step <= DRIVE_SAFE_RAMP_STEPS; step++) {
+        const timer = window.setTimeout(() => {
+          if (version !== this.driveRampVersion) return;
+          const progress = step / DRIVE_SAFE_RAMP_STEPS;
+          const next =
+            previousAppliedAmount +
+            (targetAmount - previousAppliedAmount) * progress;
+          this.applyDriveAmount(next);
+          if (step === DRIVE_SAFE_RAMP_STEPS) this.driveRampTimers = [];
+        }, (DRIVE_SAFE_RAMP_MS * step) / DRIVE_SAFE_RAMP_STEPS);
+        this.driveRampTimers.push(timer);
+      }
+      return;
+    }
+
+    this.applyDriveAmount(targetAmount);
+  }
+
+  setSpace(
+    contour: number[],
+    seed: number,
+    metal = false,
+    seconds = SPACE_DEFAULT_SECONDS,
+  ) {
+    const next = { contour, seed, metal, seconds };
     this.space = next;
     this.pendingSpace = next;
     if (!this.ctx) return;
@@ -185,7 +415,7 @@ export class SynthEngine {
       return;
     }
     const now = typeof performance !== "undefined" ? performance.now() : 0;
-    const wait = Math.max(0, WAVE_THROTTLE_MS - (now - this.lastWaveAt));
+    const wait = Math.max(0, CURVE_UPDATE_INTERVAL_MS - (now - this.lastWaveAt));
     if (this.waveTimer !== null) return;
     if (typeof window === "undefined") {
       this.flushWaveform();
@@ -259,12 +489,69 @@ export class SynthEngine {
 
   dispose() {
     this.allNotesOff();
-    if (this.waveTimer !== null) window.clearTimeout(this.waveTimer);
-    if (this.spaceTimer !== null) window.clearTimeout(this.spaceTimer);
+    this.cancelDriveRamp();
+    this.cancelDriveCurveUpdate();
+    if (this.waveTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(this.waveTimer);
+    }
+    if (this.spaceTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(this.spaceTimer);
+    }
+    this.waveTimer = null;
+    this.spaceTimer = null;
+    this.driveAppliedAmount = effectiveDriveAmount(
+      this.driveAmount,
+      this.driveSafe,
+    );
+    this.driveCurve = buildAppliedDriveCurve(
+      this.driveAuthoredCurve,
+      this.driveAppliedAmount,
+    );
+    try {
+      this.chorusLfoL?.stop();
+      this.chorusLfoR?.stop();
+      this.chorusBiasL?.stop();
+      this.chorusBiasR?.stop();
+    } catch {
+      /* already stopped */
+    }
     this.pendingSpace = this.space;
     void this.ctx?.close();
     this.ctx = null;
+    this.filter = null;
+    this.drive = null;
+    this.driveInputAnalyser = null;
+    this.driveInputData = null;
+    this.driveDcBlock = null;
+    this.driveGuard = null;
+    this.bus = null;
+    this.chorusDry = null;
+    this.chorusWet = null;
+    this.chorusSum = null;
+    this.chorusDelayL = null;
+    this.chorusDelayR = null;
+    this.chorusLfoL = null;
+    this.chorusLfoR = null;
+    this.chorusBiasL = null;
+    this.chorusBiasR = null;
+    this.dryGain = null;
+    this.wetIn = null;
+    this.convA = null;
+    this.convB = null;
+    this.wetA = null;
+    this.wetB = null;
+    this.sum = null;
+    this.master = null;
+    this.preSafetyAnalyser = null;
+    this.safety = null;
+    this.analyser = null;
+    this.wave = null;
+    this.spaceReady = false;
+    this.spaceFadeUntil = 0;
+    this.rebalanceTarget = 1;
+    const wasReady = this.ready;
     this.ready = false;
+    if (wasReady) this.readyListeners.forEach((fn) => fn(false));
   }
 
   private buildGraph() {
@@ -276,11 +563,72 @@ export class SynthEngine {
     filter.Q.value = 0.7;
     filter.frequency.value = cutoffHz(this.params.cutoff);
 
+    const drive = ctx.createWaveShaper();
+    drive.curve = this.driveCurve;
+    drive.oversample = DRIVE_OVERSAMPLE;
+
+    const driveInputAnalyser = ctx.createAnalyser();
+    driveInputAnalyser.fftSize = 1024;
+    driveInputAnalyser.smoothingTimeConstant = 0;
+
+    const driveDcBlock = ctx.createBiquadFilter();
+    driveDcBlock.type = "highpass";
+    driveDcBlock.frequency.value = DRIVE_DC_BLOCK_HZ;
+    driveDcBlock.Q.value = Math.SQRT1_2;
+
+    // SAFE's deterministic, attenuation-only guard belongs to the DRIVE stage.
+    // It sits after the 10 Hz DC blocker and before CHORUS; the separate final
+    // safety WaveShaper remains untouched at the output.
+    const driveGuard = ctx.createGain();
+    driveGuard.gain.value = driveGuardGain(this.driveCurve, this.driveSafe);
+
     const bus = ctx.createGain();
     bus.gain.value = 1;
+    this.rebalanceTarget = 1;
+
+    const chorusDry = ctx.createGain();
+    const chorusWet = ctx.createGain();
+    const initialChorusMix = chorusMixGains(this.chorusMix);
+    chorusDry.gain.value = initialChorusMix.dry;
+    chorusWet.gain.value = initialChorusMix.wet;
+    const chorusDelayL = ctx.createDelay(0.1);
+    const chorusDelayR = ctx.createDelay(0.1);
+    // Modulation inputs sum with the intrinsic AudioParam value. Keep that
+    // intrinsic value at zero so the 16 ms bias +/- 8 ms LFO is honestly 8-24 ms.
+    chorusDelayL.delayTime.value = 0;
+    chorusDelayR.delayTime.value = 0;
+    const merger = ctx.createChannelMerger(2);
+    const lfoL = ctx.createOscillator();
+    const lfoR = ctx.createOscillator();
+    lfoL.frequency.value = 1 / this.chorusPeriod;
+    lfoR.frequency.value = 1 / this.chorusPeriod;
+    const lfoGainL = ctx.createGain();
+    const lfoGainR = ctx.createGain();
+    lfoGainL.gain.value = (CHORUS_MAX_MS - CHORUS_MIN_MS) / 2000;
+    lfoGainR.gain.value = (CHORUS_MAX_MS - CHORUS_MIN_MS) / 2000;
+    const delayBiasL = ctx.createConstantSource();
+    const delayBiasR = ctx.createConstantSource();
+    delayBiasL.offset.value = (CHORUS_MAX_MS + CHORUS_MIN_MS) / 2000;
+    delayBiasR.offset.value = (CHORUS_MAX_MS + CHORUS_MIN_MS) / 2000;
+    lfoL.connect(lfoGainL).connect(chorusDelayL.delayTime);
+    lfoR.connect(lfoGainR).connect(chorusDelayR.delayTime);
+    delayBiasL.connect(chorusDelayL.delayTime);
+    delayBiasR.connect(chorusDelayR.delayTime);
+    driveGuard.connect(chorusDry);
+    driveGuard.connect(chorusDelayL);
+    driveGuard.connect(chorusDelayR);
+    chorusDelayL.connect(merger, 0, 0);
+    chorusDelayR.connect(merger, 0, 1);
+    const chorusSum = ctx.createGain();
+    chorusDry.connect(chorusSum);
+    merger.connect(chorusWet);
+    chorusWet.connect(chorusSum);
 
     const dryGain = ctx.createGain();
     const wetIn = ctx.createGain();
+    const initialSpaceMix = equalPower(this.spaceMix);
+    dryGain.gain.value = initialSpaceMix.dry;
+    wetIn.gain.value = initialSpaceMix.wet;
     const convA = ctx.createConvolver();
     const convB = ctx.createConvolver();
     convA.normalize = false;
@@ -312,9 +660,16 @@ export class SynthEngine {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.1;
 
+    // DRIVE has one honest input domain: the filtered, voice-rebalanced bus.
+    // Rebalancing here preserves the pre-DRIVE baseline gain law and prevents
+    // the musical WaveShaper from endpoint-clamping a raw polyphonic sum.
     filter.connect(bus);
-    bus.connect(dryGain);
-    bus.connect(wetIn);
+    bus.connect(driveInputAnalyser);
+    driveInputAnalyser.connect(drive);
+    drive.connect(driveDcBlock);
+    driveDcBlock.connect(driveGuard);
+    chorusSum.connect(dryGain);
+    chorusSum.connect(wetIn);
     wetIn.connect(convA);
     wetIn.connect(convB);
     convA.connect(wetA);
@@ -329,7 +684,21 @@ export class SynthEngine {
     analyser.connect(ctx.destination);
 
     this.filter = filter;
+    this.drive = drive;
+    this.driveInputAnalyser = driveInputAnalyser;
+    this.driveInputData = new Float32Array(driveInputAnalyser.fftSize);
+    this.driveDcBlock = driveDcBlock;
+    this.driveGuard = driveGuard;
     this.bus = bus;
+    this.chorusDry = chorusDry;
+    this.chorusWet = chorusWet;
+    this.chorusSum = chorusSum;
+    this.chorusDelayL = chorusDelayL;
+    this.chorusDelayR = chorusDelayR;
+    this.chorusLfoL = lfoL;
+    this.chorusLfoR = lfoR;
+    this.chorusBiasL = delayBiasL;
+    this.chorusBiasR = delayBiasR;
     this.dryGain = dryGain;
     this.wetIn = wetIn;
     this.convA = convA;
@@ -346,6 +715,16 @@ export class SynthEngine {
     this.spaceFadeUntil = 0;
 
     this.applyMix();
+    this.applyChorusMix();
+    if (this.chorusCurve) this.setChorusCurve(this.chorusCurve);
+    else {
+      lfoL.type = "sine";
+      lfoR.type = "sine";
+    }
+    lfoL.start();
+    lfoR.start();
+    delayBiasL.start();
+    delayBiasR.start();
 
     if (this.pendingSamples) this.flushWaveform();
     else this.wave = ctx.createPeriodicWave(new Float32Array([0, 0]), new Float32Array([0, 0]));
@@ -363,6 +742,52 @@ export class SynthEngine {
     this.wetIn.gain.setTargetAtTime(wet, now, 0.03);
   }
 
+  private applyChorusMix() {
+    if (!this.chorusDry || !this.chorusWet) return;
+    const now = this.ctx?.currentTime ?? 0;
+    const { dry, wet } = chorusMixGains(this.chorusMix);
+    this.chorusDry.gain.setTargetAtTime(dry, now, CHORUS_FADE);
+    this.chorusWet.gain.setTargetAtTime(wet, now, CHORUS_FADE);
+  }
+
+  private applyDriveAmount(amount: number) {
+    this.driveAppliedAmount = clampDriveAmount(amount);
+    this.driveCurve = buildAppliedDriveCurve(
+      this.driveAuthoredCurve,
+      this.driveAppliedAmount,
+    );
+    if (this.drive) this.drive.curve = this.driveCurve;
+    if (!this.driveGuard) return;
+    const now = this.ctx?.currentTime ?? 0;
+    const gain = driveGuardGain(this.driveCurve, this.driveSafe);
+    this.driveGuard.gain.setTargetAtTime(gain, now, DRIVE_GUARD_FADE);
+  }
+
+  private cancelDriveRamp() {
+    this.driveRampVersion += 1;
+    if (typeof window !== "undefined") {
+      for (const timer of this.driveRampTimers) window.clearTimeout(timer);
+    }
+    this.driveRampTimers = [];
+  }
+
+  private cancelDriveCurveUpdate() {
+    if (this.driveCurveTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(this.driveCurveTimer);
+    }
+    this.driveCurveTimer = null;
+    this.pendingDriveCurve = null;
+  }
+
+  private flushDriveCurve() {
+    const curve = this.pendingDriveCurve;
+    if (!curve) return;
+    this.pendingDriveCurve = null;
+    this.lastDriveCurveAt =
+      typeof performance !== "undefined" ? performance.now() : 0;
+    this.setDriveState(curve, this.driveAmount, this.driveSafe);
+  }
+
   private flushSpace() {
     const pending = this.pendingSpace;
     if (!pending || !this.ctx || !this.convA || !this.convB || !this.wetA || !this.wetB) return;
@@ -378,7 +803,13 @@ export class SynthEngine {
       this.spaceTimer = null;
     }
 
-    const buffer = buildSpaceBuffer(pending.contour, pending.seed, this.ctx, pending.metal);
+    const buffer = buildSpaceBuffer(
+      pending.contour,
+      pending.seed,
+      this.ctx,
+      pending.metal,
+      pending.seconds,
+    );
     this.pendingSpace = null;
 
     if (!this.spaceReady) {
@@ -419,7 +850,7 @@ export class SynthEngine {
     if (!samples || !this.ctx) return;
     this.lastWaveAt = typeof performance !== "undefined" ? performance.now() : 0;
 
-    const conditioned = normalizeWave(samples, 0.9);
+    const conditioned = normalizeWave(samples, OSCILLATOR_SAMPLE_TARGET);
     const { real, imag } = waveformToCoefficients(conditioned, HARMONIC_COUNT);
     const wave = this.ctx.createPeriodicWave(real, imag, { disableNormalization: true });
     this.wave = wave;
@@ -538,12 +969,30 @@ export class SynthEngine {
 
   private rebalance(now: number) {
     if (!this.bus) return;
-    const n = Math.max(
-      1,
-      [...this.voices.values()].filter((v) => !v.releasing).length,
-    );
-    const level = 0.9 / Math.sqrt(n);
-    this.bus.gain.setTargetAtTime(level, now, 0.04);
+    // Releasing voices remain audible until finishVoice removes them. Counting
+    // them prevents recovery from outrunning the release envelope in front of
+    // DRIVE; short stolen/retriggered tails retain ample 12-voice headroom.
+    const n = Math.max(1, this.voices.size);
+    const level = voiceRebalanceGain(n);
+    const gain = this.bus.gain;
+    if (level < this.rebalanceTarget) {
+      // Note additions need headroom before their attacks rise. A 40 ms target
+      // here would leave the old, hotter gain in front of DRIVE for the chord
+      // transient, defeating the purpose of moving the rebalance stage.
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(level, now);
+    } else if (level > this.rebalanceTarget) {
+      // Recover smoothly when voices leave so releases do not cause gain jumps.
+      if (typeof gain.cancelAndHoldAtTime === "function") {
+        gain.cancelAndHoldAtTime(now);
+      } else {
+        const current = gain.value;
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(current, now);
+      }
+      gain.setTargetAtTime(level, now, 0.04);
+    }
+    this.rebalanceTarget = level;
   }
 
   private emitVoices() {

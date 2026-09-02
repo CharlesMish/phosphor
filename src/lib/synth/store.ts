@@ -13,16 +13,51 @@ import {
 } from "./waveform";
 import {
   INITIAL_SPACE_SEED,
+  SPACE_DEFAULT_SECONDS,
   buildSpaceView,
+  clampSpaceSeconds,
   cloneContour,
   contoursDiffer,
   generateSpaceContour,
   type SpacePreset,
 } from "./space";
+import {
+  DRIVE_DEFAULT_AMOUNT,
+  DRIVE_DEFAULT_SAFE,
+  DRIVE_SAFE_MAX_AMOUNT,
+  clampDriveAmount,
+  cloneTransfer,
+  generateDrivePreset,
+  identifyDrivePreset,
+  transfersDiffer,
+  type DrivePreset,
+} from "./drive";
+import {
+  CHORUS_DEFAULT_PERIOD,
+  chorusCurvesDiffer,
+  cloneChorusCurve,
+  generateChorusPreset,
+  identifyChorusPreset,
+  type ChorusPreset,
+} from "./chorus";
+import {
+  DEFAULT_MOTION_BEATS,
+  DEFAULT_MOTION_BPM,
+  DEFAULT_MOTION_MODE,
+  MOTION_BEAT_LENGTHS,
+  clampMotionBpm,
+  cloneMotionPath,
+  complementMotionPath,
+  createDefaultMotionPath,
+  motionPathsDiffer,
+  sampleMotionPath,
+  type MotionBeats,
+  type MotionMode,
+} from "./motion";
 
-export type { WavePreset, SpacePreset };
+export type { WavePreset, SpacePreset, DrivePreset, ChorusPreset };
 
-export type EditorDomain = "cycle" | "space";
+export type EditorDomain = "cycle" | "motion" | "drive" | "chorus" | "space";
 
 const HISTORY_LIMIT = 32;
 const INITIAL_SPACE_MIX = 0.38;
@@ -32,6 +67,16 @@ type SpaceSnap = {
   seed: number;
   preset: SpacePreset | "custom";
   metal: boolean;
+};
+
+type DriveSnap = {
+  curve: number[];
+  preset: DrivePreset | "custom";
+};
+
+type ChorusSnap = {
+  curve: number[];
+  preset: ChorusPreset | "custom";
 };
 
 type SynthState = {
@@ -50,8 +95,30 @@ type SynthState = {
   slotB: number[] | null;
   morph: number;
   morphLive: boolean;
+  motionPath: number[];
+  motionPlaying: boolean;
+  motionProgress: number;
+  motionRunId: number;
+  motionBpm: number;
+  motionBeats: MotionBeats;
+  motionMode: MotionMode;
+  motionPast: number[][];
+  motionFuture: number[][];
   past: number[][];
   future: number[][];
+  driveCurve: number[];
+  drivePreset: DrivePreset | "custom";
+  driveAmount: number;
+  driveSafe: boolean;
+  driveHasDrawn: boolean;
+  drivePast: DriveSnap[];
+  driveFuture: DriveSnap[];
+  chorusCurve: number[];
+  chorusPreset: ChorusPreset | "custom";
+  chorusPeriod: number;
+  chorusMix: number;
+  chorusPast: ChorusSnap[];
+  chorusFuture: ChorusSnap[];
   spaceContour: number[];
   spaceView: number[];
   spaceSeed: number;
@@ -59,6 +126,7 @@ type SynthState = {
   /** Metal modes are processing state, independent of whether the contour is still the preset shape. */
   spaceMetal: boolean;
   spaceMix: number;
+  spaceSeconds: number;
   spaceHasDrawn: boolean;
   spacePast: SpaceSnap[];
   spaceFuture: SpaceSnap[];
@@ -80,13 +148,39 @@ type SynthActions = {
   captureB: () => void;
   swapSlots: () => void;
   setMorph: (t: number, immediate?: boolean) => void;
+  auditionMotion: (t: number, immediate?: boolean) => void;
+  setLiveMotionPath: (path: number[]) => void;
+  finishMotionGesture: (before: number[], after: number[]) => void;
+  playMotion: () => void;
+  stopMotion: () => void;
+  setMotionBpm: (bpm: number) => void;
+  setMotionBeats: (beats: MotionBeats) => void;
+  setMotionMode: (mode: MotionMode) => void;
+  setMotionPlaybackPosition: (
+    t: number,
+    progress: number,
+    complete: boolean,
+    runId: number,
+  ) => void;
   undo: () => void;
   redo: () => void;
+  setLiveDrive: (curve: number[]) => void;
+  finishDriveGesture: (before: number[], after: number[]) => void;
+  applyDrivePreset: (preset: DrivePreset) => void;
+  setDriveAmount: (amount: number) => void;
+  setDriveSafe: (safe: boolean) => void;
+  setLiveChorus: (curve: number[]) => void;
+  finishChorusGesture: (before: number[], after: number[]) => void;
+  applyChorusPreset: (preset: ChorusPreset) => void;
+  setChorusPeriod: (period: number) => void;
+  setChorusMix: (mix: number) => void;
   setLiveContour: (contour: number[]) => void;
   finishSpaceGesture: (before: number[], after: number[]) => void;
   applySpacePreset: (preset: SpacePreset) => void;
   scatterSpace: () => void;
   setSpaceMix: (mix: number) => void;
+  setSpaceLength: (seconds: number) => void;
+  commitSpaceLength: (seconds: number) => void;
   setParam: (key: keyof SynthParams, value: number) => void;
   setOctave: (octave: number) => void;
   setActiveNotes: (notes: number[]) => void;
@@ -96,11 +190,38 @@ type SynthActions = {
 };
 
 const initialSamples = generatePreset("sine");
+const initialMotionPath = createDefaultMotionPath();
+const initialDriveCurve = generateDrivePreset("identity");
+const initialChorusCurve = generateChorusPreset("sine");
 const initialContour = generateSpaceContour("room");
 const initialSeed = INITIAL_SPACE_SEED;
 
 function pushPast(past: number[][], snapshot: number[]): number[][] {
   const next = [...past, cloneWave(snapshot)];
+  if (next.length > HISTORY_LIMIT) next.splice(0, next.length - HISTORY_LIMIT);
+  return next;
+}
+
+function pushMotionPast(past: number[][], snapshot: number[]): number[][] {
+  const next = [...past, cloneMotionPath(snapshot)];
+  if (next.length > HISTORY_LIMIT) next.splice(0, next.length - HISTORY_LIMIT);
+  return next;
+}
+
+function pushDrivePast(past: DriveSnap[], snap: DriveSnap): DriveSnap[] {
+  const next = [
+    ...past,
+    { curve: cloneTransfer(snap.curve), preset: snap.preset },
+  ];
+  if (next.length > HISTORY_LIMIT) next.splice(0, next.length - HISTORY_LIMIT);
+  return next;
+}
+
+function pushChorusPast(past: ChorusSnap[], snap: ChorusSnap): ChorusSnap[] {
+  const next = [
+    ...past,
+    { curve: cloneChorusCurve(snap.curve), preset: snap.preset },
+  ];
   if (next.length > HISTORY_LIMIT) next.splice(0, next.length - HISTORY_LIMIT);
   return next;
 }
@@ -126,11 +247,49 @@ function morphSamples(slotA: number[], slotB: number[], t: number): number[] {
   return normalizeWave(lerpWaves(slotA, slotB, u), 0.92);
 }
 
-function applySpace(contour: number[], seed: number, metal: boolean) {
-  synth.setSpace(contour, seed, metal);
+function applySpace(contour: number[], seed: number, metal: boolean, seconds: number) {
+  synth.setSpace(contour, seed, metal, seconds);
 }
 
-export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
+function applyDrive(
+  curve: number[],
+  amount: number,
+  safe: boolean,
+  smoothAmount = false,
+) {
+  synth.setDriveState(curve, amount, safe, smoothAmount);
+}
+
+export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
+  type MorphSource = "manual" | "motion-drawing" | "motion-playback";
+
+  const applyMorphPosition = (
+    t: number,
+    source: MorphSource,
+    immediate = false,
+    motionState: Partial<SynthState> = {},
+  ) => {
+    const { slotA, slotB, morphLive, samples: prev } = get();
+    if (!slotA || !slotB) return false;
+    const u = Math.min(1, Math.max(0, t));
+    const samples = morphSamples(slotA, slotB, u);
+    const recordCycleHistory = source === "manual";
+    const reengage = recordCycleHistory && !morphLive && wavesDiffer(prev, samples);
+    set({
+      morph: u,
+      samples,
+      preset: "custom",
+      hasDrawn: true,
+      morphLive: true,
+      ...(source !== "motion-playback" ? { motionPlaying: false } : {}),
+      ...(reengage ? { past: pushPast(get().past, prev), future: [] } : {}),
+      ...motionState,
+    });
+    synth.setWaveform(samples, immediate);
+    return true;
+  };
+
+  return {
   domain: "cycle",
   samples: initialSamples,
   preset: "sine",
@@ -146,14 +305,37 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   slotB: null,
   morph: 0,
   morphLive: false,
+  motionPath: initialMotionPath,
+  motionPlaying: false,
+  motionProgress: 0,
+  motionRunId: 0,
+  motionBpm: DEFAULT_MOTION_BPM,
+  motionBeats: DEFAULT_MOTION_BEATS,
+  motionMode: DEFAULT_MOTION_MODE,
+  motionPast: [],
+  motionFuture: [],
   past: [],
   future: [],
+  driveCurve: initialDriveCurve,
+  drivePreset: "identity",
+  driveAmount: DRIVE_DEFAULT_AMOUNT,
+  driveSafe: DRIVE_DEFAULT_SAFE,
+  driveHasDrawn: false,
+  drivePast: [],
+  driveFuture: [],
+  chorusCurve: initialChorusCurve,
+  chorusPreset: "sine",
+  chorusPeriod: CHORUS_DEFAULT_PERIOD,
+  chorusMix: 0,
+  chorusPast: [],
+  chorusFuture: [],
   spaceContour: initialContour,
   spaceView: buildSpaceView(initialContour, initialSeed),
   spaceSeed: initialSeed,
   spacePreset: "room",
   spaceMetal: false,
   spaceMix: INITIAL_SPACE_MIX,
+  spaceSeconds: SPACE_DEFAULT_SECONDS,
   spaceHasDrawn: false,
   spacePast: [],
   spaceFuture: [],
@@ -163,15 +345,145 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
     synth.unlock();
   },
 
+  setLiveDrive: (curve) => {
+    set({
+      driveCurve: curve,
+      drivePreset: "custom",
+      driveHasDrawn: true,
+    });
+    // Keep pointer rendering/store state immediate while coalescing the costly
+    // WaveShaper table assignment to the same cadence as CYCLE drawing.
+    synth.setDriveCurve(curve, false);
+  },
+
+  finishDriveGesture: (before, after) => {
+    const { drivePast, driveAmount, driveSafe } = get();
+    const changed = transfersDiffer(before, after);
+    set({
+      driveCurve: after,
+      drivePreset: "custom",
+      driveHasDrawn: true,
+      ...(changed
+        ? {
+            drivePast: pushDrivePast(drivePast, {
+              curve: before,
+              preset: identifyDrivePreset(before),
+            }),
+            driveFuture: [],
+          }
+        : {}),
+    });
+    applyDrive(after, driveAmount, driveSafe);
+  },
+
+  applyDrivePreset: (preset) => {
+    const { driveCurve, drivePreset, drivePast, driveAmount, driveSafe } = get();
+    const next = generateDrivePreset(preset);
+    if (!transfersDiffer(driveCurve, next) && drivePreset === preset) {
+      set({ drivePreset: preset, driveHasDrawn: true });
+      applyDrive(next, driveAmount, driveSafe);
+      return;
+    }
+    set({
+      driveCurve: next,
+      drivePreset: preset,
+      driveHasDrawn: true,
+      drivePast: pushDrivePast(drivePast, {
+        curve: driveCurve,
+        preset: drivePreset,
+      }),
+      driveFuture: [],
+    });
+    applyDrive(next, driveAmount, driveSafe);
+  },
+
+  setDriveAmount: (amount) => {
+    const { driveCurve, driveSafe } = get();
+    const clamped = clampDriveAmount(amount);
+    const next = driveSafe
+      ? Math.min(DRIVE_SAFE_MAX_AMOUNT, clamped)
+      : clamped;
+    set({ driveAmount: next });
+    applyDrive(driveCurve, next, driveSafe);
+    synth.unlock();
+  },
+
+  setDriveSafe: (safe) => {
+    const state = get();
+    const nextAmount = safe
+      ? Math.min(DRIVE_SAFE_MAX_AMOUNT, state.driveAmount)
+      : state.driveAmount;
+    const smoothClamp =
+      safe && !state.driveSafe && state.driveAmount > DRIVE_SAFE_MAX_AMOUNT;
+    set({ driveSafe: safe, driveAmount: nextAmount });
+    applyDrive(state.driveCurve, nextAmount, safe, smoothClamp);
+    synth.unlock();
+  },
+
+  setLiveChorus: (curve) => {
+    set({ chorusCurve: curve, chorusPreset: "custom" });
+    synth.setChorusCurve(curve);
+  },
+
+  finishChorusGesture: (before, after) => {
+    const changed = chorusCurvesDiffer(before, after);
+    set({
+      chorusCurve: after,
+      chorusPreset: changed ? "custom" : identifyChorusPreset(before),
+      ...(changed
+        ? {
+            chorusPast: pushChorusPast(get().chorusPast, {
+              curve: before,
+              preset: identifyChorusPreset(before),
+            }),
+            chorusFuture: [],
+          }
+        : {}),
+    });
+    synth.setChorusCurve(after);
+  },
+
+  applyChorusPreset: (preset) => {
+    const { chorusCurve, chorusPreset, chorusPast } = get();
+    const next = generateChorusPreset(preset);
+    if (!chorusCurvesDiffer(chorusCurve, next) && chorusPreset === preset) {
+      synth.setChorusCurve(next);
+      return;
+    }
+    set({
+      chorusCurve: next,
+      chorusPreset: preset,
+      chorusPast: pushChorusPast(chorusPast, {
+        curve: chorusCurve,
+        preset: chorusPreset,
+      }),
+      chorusFuture: [],
+    });
+    synth.setChorusCurve(next);
+  },
+
+  setChorusPeriod: (period) => {
+    const next = Math.min(4, Math.max(0.25, period));
+    set({ chorusPeriod: next });
+    synth.setChorusPeriod(next);
+  },
+
+  setChorusMix: (mix) => {
+    const next = Math.min(1, Math.max(0, mix));
+    set({ chorusMix: next });
+    synth.setChorusMix(next);
+    synth.unlock();
+  },
+
   setLiveSamples: (samples, immediate = false) => {
-    set({ samples, preset: "custom", morphLive: false });
+    set({ samples, preset: "custom", morphLive: false, motionPlaying: false });
     synth.setWaveform(samples, immediate);
   },
 
   commitSamples: (samples, preset = "custom") => {
     const prev = get().samples;
     if (!wavesDiffer(prev, samples)) {
-      set({ samples, preset, hasDrawn: true, morphLive: false });
+      set({ samples, preset, hasDrawn: true, morphLive: false, motionPlaying: false });
       synth.setWaveform(samples, true);
       return;
     }
@@ -180,6 +492,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       preset,
       hasDrawn: true,
       morphLive: false,
+      motionPlaying: false,
       past: pushPast(get().past, prev),
       future: [],
     });
@@ -193,6 +506,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       preset: "custom",
       hasDrawn: true,
       morphLive: false,
+      motionPlaying: false,
       ...(changed ? { past: pushPast(get().past, before), future: [] } : {}),
     });
     synth.setWaveform(after, true);
@@ -222,35 +536,85 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
 
   captureA: () => {
     const samples = cloneWave(get().samples);
-    set({ slotA: samples, morph: 0, hasDrawn: true, morphLive: Boolean(get().slotB) });
+    set({
+      slotA: samples,
+      morph: 0,
+      hasDrawn: true,
+      morphLive: Boolean(get().slotB),
+      motionPlaying: false,
+    });
   },
   captureB: () => {
     const samples = cloneWave(get().samples);
-    set({ slotB: samples, morph: 1, hasDrawn: true, morphLive: Boolean(get().slotA) });
+    set({
+      slotB: samples,
+      morph: 1,
+      hasDrawn: true,
+      morphLive: Boolean(get().slotA),
+      motionPlaying: false,
+    });
   },
   swapSlots: () => {
-    const { slotA, slotB, morph } = get();
+    const { slotA, slotB, morph, motionPath, motionPast, motionFuture } = get();
     set({
       slotA: slotB ? cloneWave(slotB) : null,
       slotB: slotA ? cloneWave(slotA) : null,
       morph: 1 - morph,
+      motionPath: complementMotionPath(motionPath),
+      motionPast: motionPast.map(complementMotionPath),
+      motionFuture: motionFuture.map(complementMotionPath),
+      motionPlaying: false,
     });
   },
   setMorph: (t, immediate = false) => {
-    const { slotA, slotB, morphLive, samples: prev } = get();
-    if (!slotA || !slotB) return;
-    const u = Math.min(1, Math.max(0, t));
-    const samples = morphSamples(slotA, slotB, u);
-    const reengage = !morphLive && wavesDiffer(prev, samples);
+    applyMorphPosition(t, "manual", immediate);
+  },
+
+  auditionMotion: (t, immediate = false) => {
+    applyMorphPosition(t, "motion-drawing", immediate);
+  },
+
+  setLiveMotionPath: (path) => {
+    set({ motionPath: path });
+  },
+
+  finishMotionGesture: (before, after) => {
+    const changed = motionPathsDiffer(before, after);
     set({
-      morph: u,
-      samples,
-      preset: "custom",
-      hasDrawn: true,
-      morphLive: true,
-      ...(reengage ? { past: pushPast(get().past, prev), future: [] } : {}),
+      motionPath: after,
+      ...(changed
+        ? { motionPast: pushMotionPast(get().motionPast, before), motionFuture: [] }
+        : {}),
     });
-    synth.setWaveform(samples, immediate);
+  },
+
+  playMotion: () => {
+    const { slotA, slotB, motionPath, motionRunId } = get();
+    if (!slotA || !slotB) return;
+    synth.unlock();
+    const nextRunId = motionRunId + 1;
+    applyMorphPosition(sampleMotionPath(motionPath, 0), "motion-playback", true, {
+      motionPlaying: true,
+      motionProgress: 0,
+      motionRunId: nextRunId,
+    });
+  },
+
+  stopMotion: () => set({ motionPlaying: false }),
+
+  setMotionBpm: (bpm) => set({ motionBpm: clampMotionBpm(bpm) }),
+  setMotionBeats: (beats) => {
+    if (MOTION_BEAT_LENGTHS.includes(beats)) set({ motionBeats: beats });
+  },
+  setMotionMode: (mode) => set({ motionMode: mode }),
+
+  setMotionPlaybackPosition: (t, progress, complete, runId) => {
+    const state = get();
+    if (!state.motionPlaying || state.motionRunId !== runId) return;
+    applyMorphPosition(t, "motion-playback", complete, {
+      motionProgress: Math.min(1, Math.max(0, progress)),
+      ...(complete ? { motionPlaying: false } : {}),
+    });
   },
 
   setLiveContour: (contour) => {
@@ -263,7 +627,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   },
 
   finishSpaceGesture: (before, after) => {
-    const { spaceSeed, spacePreset, spaceMetal, spacePast } = get();
+    const { spaceSeed, spacePreset, spaceMetal, spacePast, spaceSeconds } = get();
     const changed = contoursDiffer(before, after);
     set({
       spaceContour: after,
@@ -285,16 +649,23 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
     // Editing changes the contour identity to custom, not the processing identity.
     // A Metal-derived space therefore keeps its modal resonators until the user
     // explicitly chooses a non-Metal preset.
-    applySpace(after, spaceSeed, spaceMetal);
+    applySpace(after, spaceSeed, spaceMetal, spaceSeconds);
   },
 
   applySpacePreset: (preset) => {
-    const { spaceContour, spaceSeed, spacePreset, spaceMetal, spacePast } = get();
+    const {
+      spaceContour,
+      spaceSeed,
+      spacePreset,
+      spaceMetal,
+      spacePast,
+      spaceSeconds,
+    } = get();
     const next = generateSpaceContour(preset);
     const nextMetal = preset === "metal";
     if (!contoursDiffer(spaceContour, next) && spacePreset === preset) {
       set({ spacePreset: preset, spaceMetal: nextMetal, spaceHasDrawn: true });
-      applySpace(next, spaceSeed, nextMetal);
+      applySpace(next, spaceSeed, nextMetal, spaceSeconds);
       return;
     }
     set({
@@ -311,11 +682,18 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       }),
       spaceFuture: [],
     });
-    applySpace(next, spaceSeed, nextMetal);
+    applySpace(next, spaceSeed, nextMetal, spaceSeconds);
   },
 
   scatterSpace: () => {
-    const { spaceContour, spaceSeed, spacePreset, spaceMetal, spacePast } = get();
+    const {
+      spaceContour,
+      spaceSeed,
+      spacePreset,
+      spaceMetal,
+      spacePast,
+      spaceSeconds,
+    } = get();
     const seed = (spaceSeed + 0x9e3779b9) >>> 0 || 1;
     set({
       spaceSeed: seed,
@@ -329,7 +707,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       }),
       spaceFuture: [],
     });
-    applySpace(spaceContour, seed, spaceMetal);
+    applySpace(spaceContour, seed, spaceMetal, spaceSeconds);
   },
 
   setSpaceMix: (mix) => {
@@ -339,7 +717,73 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
     synth.unlock();
   },
 
+  // Length is deliberately absent from SpaceSnap: it is a playback parameter,
+  // not part of authored contour/seed/Metal history.
+  setSpaceLength: (seconds) => {
+    set({ spaceSeconds: clampSpaceSeconds(seconds) });
+  },
+  commitSpaceLength: (seconds) => {
+    const spaceSeconds = clampSpaceSeconds(seconds);
+    const { spaceContour, spaceSeed, spaceMetal } = get();
+    set({ spaceSeconds });
+    applySpace(spaceContour, spaceSeed, spaceMetal, spaceSeconds);
+  },
+
   undo: () => {
+    if (get().domain === "motion") {
+      const { motionPast, motionPath, motionFuture } = get();
+      const prev = motionPast[motionPast.length - 1];
+      if (!prev) {
+        set({ motionPlaying: false });
+        return;
+      }
+      set({
+        motionPath: cloneMotionPath(prev),
+        motionPast: motionPast.slice(0, -1),
+        motionFuture: [...motionFuture, cloneMotionPath(motionPath)],
+        motionPlaying: false,
+      });
+      return;
+    }
+    if (get().domain === "drive") {
+      const {
+        drivePast,
+        driveCurve,
+        drivePreset,
+        driveFuture,
+        driveAmount,
+        driveSafe,
+      } = get();
+      const prev = drivePast[drivePast.length - 1];
+      if (!prev) return;
+      set({
+        driveCurve: cloneTransfer(prev.curve),
+        drivePreset: prev.preset,
+        drivePast: drivePast.slice(0, -1),
+        driveFuture: [
+          ...driveFuture,
+          { curve: cloneTransfer(driveCurve), preset: drivePreset },
+        ],
+      });
+      applyDrive(prev.curve, driveAmount, driveSafe);
+      return;
+    }
+    if (get().domain === "chorus") {
+      const { chorusPast, chorusCurve, chorusPreset, chorusFuture } = get();
+      const prev = chorusPast[chorusPast.length - 1];
+      if (!prev) return;
+      set({
+        chorusCurve: cloneChorusCurve(prev.curve),
+        chorusPreset: prev.preset,
+        chorusPast: chorusPast.slice(0, -1),
+        chorusFuture: [
+          ...chorusFuture,
+          { curve: cloneChorusCurve(chorusCurve), preset: chorusPreset },
+        ],
+      });
+      synth.setChorusCurve(prev.curve);
+      return;
+    }
     if (get().domain === "space") {
       const {
         spacePast,
@@ -348,6 +792,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
         spacePreset,
         spaceMetal,
         spaceFuture,
+        spaceSeconds,
       } = get();
       const prev = spacePast[spacePast.length - 1];
       if (!prev) return;
@@ -368,7 +813,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
           },
         ],
       });
-      applySpace(prev.contour, prev.seed, prev.metal);
+      applySpace(prev.contour, prev.seed, prev.metal, spaceSeconds);
       return;
     }
     const { past, samples, future } = get();
@@ -378,12 +823,67 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       samples: cloneWave(prev),
       preset: "custom",
       morphLive: false,
+      motionPlaying: false,
       past: past.slice(0, -1),
       future: [...future, cloneWave(samples)],
     });
     synth.setWaveform(prev, true);
   },
   redo: () => {
+    if (get().domain === "motion") {
+      const { motionFuture, motionPath, motionPast } = get();
+      const next = motionFuture[motionFuture.length - 1];
+      if (!next) {
+        set({ motionPlaying: false });
+        return;
+      }
+      set({
+        motionPath: cloneMotionPath(next),
+        motionFuture: motionFuture.slice(0, -1),
+        motionPast: pushMotionPast(motionPast, motionPath),
+        motionPlaying: false,
+      });
+      return;
+    }
+    if (get().domain === "drive") {
+      const {
+        driveFuture,
+        driveCurve,
+        drivePreset,
+        drivePast,
+        driveAmount,
+        driveSafe,
+      } = get();
+      const next = driveFuture[driveFuture.length - 1];
+      if (!next) return;
+      set({
+        driveCurve: cloneTransfer(next.curve),
+        drivePreset: next.preset,
+        driveFuture: driveFuture.slice(0, -1),
+        drivePast: pushDrivePast(drivePast, {
+          curve: driveCurve,
+          preset: drivePreset,
+        }),
+      });
+      applyDrive(next.curve, driveAmount, driveSafe);
+      return;
+    }
+    if (get().domain === "chorus") {
+      const { chorusFuture, chorusCurve, chorusPreset, chorusPast } = get();
+      const next = chorusFuture[chorusFuture.length - 1];
+      if (!next) return;
+      set({
+        chorusCurve: cloneChorusCurve(next.curve),
+        chorusPreset: next.preset,
+        chorusFuture: chorusFuture.slice(0, -1),
+        chorusPast: pushChorusPast(chorusPast, {
+          curve: chorusCurve,
+          preset: chorusPreset,
+        }),
+      });
+      synth.setChorusCurve(next.curve);
+      return;
+    }
     if (get().domain === "space") {
       const {
         spaceFuture,
@@ -392,6 +892,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
         spacePreset,
         spaceMetal,
         spacePast,
+        spaceSeconds,
       } = get();
       const next = spaceFuture[spaceFuture.length - 1];
       if (!next) return;
@@ -409,7 +910,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
           metal: spaceMetal,
         }),
       });
-      applySpace(next.contour, next.seed, next.metal);
+      applySpace(next.contour, next.seed, next.metal, spaceSeconds);
       return;
     }
     const { future, samples, past } = get();
@@ -419,6 +920,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
       samples: cloneWave(next),
       preset: "custom",
       morphLive: false,
+      motionPlaying: false,
       future: future.slice(0, -1),
       past: pushPast(past, samples),
     });
@@ -438,8 +940,17 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => ({
   setAudioReady: (ready) => set({ audioReady: ready }),
   markDrawn: () => set({ hasDrawn: true }),
   markSpaceDrawn: () => set({ spaceHasDrawn: true }),
-}));
+  };
+});
 
 synth.setWaveform(cloneWave(initialSamples), true);
-synth.setSpace(cloneContour(initialContour), initialSeed, false);
+synth.setDriveState(
+  cloneTransfer(initialDriveCurve),
+  DRIVE_DEFAULT_AMOUNT,
+  DRIVE_DEFAULT_SAFE,
+);
+synth.setChorusCurve(cloneChorusCurve(initialChorusCurve));
+synth.setChorusPeriod(CHORUS_DEFAULT_PERIOD);
+synth.setChorusMix(0);
+synth.setSpace(cloneContour(initialContour), initialSeed, false, SPACE_DEFAULT_SECONDS);
 synth.setSpaceMix(INITIAL_SPACE_MIX);

@@ -5,20 +5,27 @@ import { midiFromCode } from "@/lib/synth/keyboard-map";
 import { useTreatment } from "@/lib/presentation/treatment";
 import { isEditableTarget } from "@/lib/utils";
 import { WaveformEditor } from "./waveform-editor";
+import { MotionEditor } from "./motion-editor";
+import { MotionPlaybackController } from "./motion-playback";
 import { Oscilloscope } from "./oscilloscope";
 import { Piano } from "./piano";
 import { HeaderBar, PresetBar, SideParams } from "./controls";
 import { MorphBar } from "./morph-bar";
 import { SpaceBar } from "./space-bar";
+import { DriveBar } from "./drive-bar";
+import { ChorusBar } from "./chorus-bar";
 
 type PhosphorDebug = {
   peak: () => number;
+  driveInputRange: () => { min: number; max: number };
   mix: () => number;
+  length: () => number;
   domain: () => string;
   seed: () => number;
   contour: () => number[];
   view: () => number[];
   samples: () => number[];
+  driveCurve: () => number[];
   preset: () => string;
   spacePreset: () => string;
   voices: () => number[];
@@ -44,12 +51,15 @@ export function PhosphorApp() {
     const w = window as Window & { __phosphor?: PhosphorDebug };
     w.__phosphor = {
       peak: () => synth.measurePeak(),
+      driveInputRange: () => synth.measureDriveInputRange(),
       mix: () => useSynthStore.getState().spaceMix,
+      length: () => useSynthStore.getState().spaceSeconds,
       domain: () => useSynthStore.getState().domain,
       seed: () => useSynthStore.getState().spaceSeed,
       contour: () => useSynthStore.getState().spaceContour.slice(),
       view: () => useSynthStore.getState().spaceView.slice(),
       samples: () => useSynthStore.getState().samples.slice(),
+      driveCurve: () => useSynthStore.getState().driveCurve.slice(),
       preset: () => String(useSynthStore.getState().preset),
       spacePreset: () => String(useSynthStore.getState().spacePreset),
       voices: () => useSynthStore.getState().activeNotes.slice(),
@@ -82,6 +92,7 @@ export function PhosphorApp() {
       if (e.code === "Escape") {
         e.preventDefault();
         held.clear();
+        useSynthStore.getState().stopMotion();
         synth.allNotesOff();
         return;
       }
@@ -103,6 +114,7 @@ export function PhosphorApp() {
 
     const panic = () => {
       held.clear();
+      useSynthStore.getState().stopMotion();
       synth.allNotesOff();
     };
 
@@ -132,6 +144,7 @@ export function PhosphorApp() {
       tabIndex={0}
       onPointerDown={() => synth.unlock()}
     >
+      <MotionPlaybackController />
       <div className="mx-auto flex min-h-0 w-full max-w-[92rem] flex-1 flex-col gap-2 overflow-hidden px-3 py-2 sm:px-5 sm:py-4 md:gap-3">
         <div className="shrink-0">
           <HeaderBar />
@@ -139,9 +152,17 @@ export function PhosphorApp() {
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-            <WaveformEditor />
+            {domain === "motion" ? <MotionEditor /> : <WaveformEditor />}
             <div className="shrink-0">
-              {domain === "space" ? <SpaceBar /> : <MorphBar />}
+              {domain === "space" ? (
+                <SpaceBar />
+              ) : domain === "drive" ? (
+                <DriveBar />
+              ) : domain === "chorus" ? (
+                <ChorusBar />
+              ) : (
+                <MorphBar />
+              )}
             </div>
           </div>
           <div className="flex w-full min-h-0 flex-col gap-3 lg:w-72 lg:shrink-0">

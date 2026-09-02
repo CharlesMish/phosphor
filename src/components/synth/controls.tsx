@@ -1,8 +1,27 @@
-import { Minus, Plus, RotateCcw, Shuffle, Spline, FlipVertical2, Maximize2, FlipHorizontal2, Undo2, Redo2, Dices } from "lucide-react";
+import {
+  Dices,
+  FlipHorizontal2,
+  FlipVertical2,
+  Maximize2,
+  Minus,
+  Play,
+  Plus,
+  Redo2,
+  RotateCcw,
+  Shuffle,
+  Spline,
+  Square,
+  Undo2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { TreatmentSelector } from "./treatment-selector";
-import { useSynthStore, type WavePreset, type SpacePreset } from "@/lib/synth/store";
+import {
+  useSynthStore,
+  type DrivePreset,
+  type SpacePreset,
+  type WavePreset,
+} from "@/lib/synth/store";
 import { PRESET_LABEL, PRESET_ORDER, generatePreset } from "@/lib/synth/waveform";
 import {
   SPACE_PRESET_LABEL,
@@ -10,7 +29,26 @@ import {
   generateSpaceContour,
   contourToPath,
 } from "@/lib/synth/space";
+import {
+  DRIVE_PRESET_LABEL,
+  DRIVE_PRESET_ORDER,
+  generateDrivePreset,
+  transferToPath,
+} from "@/lib/synth/drive";
+import {
+  CHORUS_PRESET_LABEL,
+  CHORUS_PRESET_ORDER,
+  type ChorusPreset,
+} from "@/lib/synth/chorus";
 import { rangeLabel } from "@/lib/synth/keyboard-map";
+import {
+  MOTION_BEAT_LENGTHS,
+  MOTION_BPM_MAX,
+  MOTION_BPM_MIN,
+  MOTION_MODES,
+  type MotionBeats,
+  type MotionMode,
+} from "@/lib/synth/motion";
 import { cn } from "@/lib/utils";
 
 function MiniWave({ kind, active }: { kind: WavePreset; active: boolean }) {
@@ -57,6 +95,24 @@ function MiniContour({ kind, active }: { kind: SpacePreset; active: boolean }) {
   const w = 44;
   const h = 16;
   const d = contourToPath(generateSpaceContour(kind), w, h, 12);
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="overflow-visible">
+      <path
+        d={d}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={active ? 1.6 : 1.2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function MiniTransfer({ kind, active }: { kind: DrivePreset; active: boolean }) {
+  const w = 44;
+  const h = 16;
+  const d = transferToPath(generateDrivePreset(kind), w, h, 8);
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="overflow-visible">
       <path
@@ -148,8 +204,12 @@ export function SideParams() {
 export function PresetBar() {
   const domain = useSynthStore((s) => s.domain);
   const preset = useSynthStore((s) => s.preset);
+  const drivePreset = useSynthStore((s) => s.drivePreset);
+  const chorusPreset = useSynthStore((s) => s.chorusPreset);
   const spacePreset = useSynthStore((s) => s.spacePreset);
   const applyPreset = useSynthStore((s) => s.applyPreset);
+  const applyDrivePreset = useSynthStore((s) => s.applyDrivePreset);
+  const applyChorusPreset = useSynthStore((s) => s.applyChorusPreset);
   const applySpacePreset = useSynthStore((s) => s.applySpacePreset);
   const scatterSpace = useSynthStore((s) => s.scatterSpace);
   const resetWave = useSynthStore((s) => s.resetWave);
@@ -160,11 +220,37 @@ export function PresetBar() {
   const mirror = useSynthStore((s) => s.mirror);
   const undo = useSynthStore((s) => s.undo);
   const redo = useSynthStore((s) => s.redo);
+  const motionPlaying = useSynthStore((s) => s.motionPlaying);
+  const motionArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
+  const playMotion = useSynthStore((s) => s.playMotion);
+  const stopMotion = useSynthStore((s) => s.stopMotion);
+  const motionBpm = useSynthStore((s) => s.motionBpm);
+  const motionBeats = useSynthStore((s) => s.motionBeats);
+  const motionMode = useSynthStore((s) => s.motionMode);
+  const setMotionBpm = useSynthStore((s) => s.setMotionBpm);
+  const setMotionBeats = useSynthStore((s) => s.setMotionBeats);
+  const setMotionMode = useSynthStore((s) => s.setMotionMode);
   const canUndo = useSynthStore((s) =>
-    s.domain === "space" ? s.spacePast.length > 0 : s.past.length > 0,
+    s.domain === "space"
+      ? s.spacePast.length > 0
+      : s.domain === "motion"
+        ? s.motionPast.length > 0
+        : s.domain === "drive"
+          ? s.drivePast.length > 0
+          : s.domain === "chorus"
+            ? s.chorusPast.length > 0
+            : s.past.length > 0,
   );
   const canRedo = useSynthStore((s) =>
-    s.domain === "space" ? s.spaceFuture.length > 0 : s.future.length > 0,
+    s.domain === "space"
+      ? s.spaceFuture.length > 0
+      : s.domain === "motion"
+        ? s.motionFuture.length > 0
+        : s.domain === "drive"
+          ? s.driveFuture.length > 0
+          : s.domain === "chorus"
+            ? s.chorusFuture.length > 0
+            : s.future.length > 0,
   );
 
   const cycleActions = [
@@ -183,6 +269,201 @@ export function PresetBar() {
     { id: "redo", label: "Redo", icon: Redo2, run: redo, disabled: !canRedo },
     { id: "scatter", label: "Scatter", icon: Dices, run: scatterSpace, disabled: false },
   ] as const;
+
+  const fxActions = [
+    { id: "undo", label: "Undo", icon: Undo2, run: undo, disabled: !canUndo },
+    { id: "redo", label: "Redo", icon: Redo2, run: redo, disabled: !canRedo },
+  ] as const;
+
+  if (domain === "motion") {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            <span>BPM</span>
+            <input
+              type="number"
+              min={MOTION_BPM_MIN}
+              max={MOTION_BPM_MAX}
+              step={1}
+              value={motionBpm}
+              disabled={motionPlaying}
+              onChange={(event) => {
+                const next = event.currentTarget.valueAsNumber;
+                if (Number.isFinite(next)) setMotionBpm(next);
+              }}
+              className="h-9 w-16 rounded-md bg-surface-2 px-2 text-center text-xs tabular-nums text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+              aria-label="Motion BPM"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            <span>Length</span>
+            <select
+              value={motionBeats}
+              disabled={motionPlaying}
+              onChange={(event) =>
+                setMotionBeats(Number(event.currentTarget.value) as MotionBeats)
+              }
+              className="h-9 rounded-md bg-surface-2 px-2 text-xs text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+              aria-label="Motion length"
+            >
+              {MOTION_BEAT_LENGTHS.map((beats) => (
+                <option key={beats} value={beats}>
+                  {beats} {beats === 1 ? "beat" : "beats"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+            <span>Mode</span>
+            <select
+              value={motionMode}
+              disabled={motionPlaying}
+              onChange={(event) => setMotionMode(event.currentTarget.value as MotionMode)}
+              className="h-9 rounded-md bg-surface-2 px-2 text-xs text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+              aria-label="Motion mode"
+            >
+              {MOTION_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode === "one-shot" ? "One-shot" : mode === "ping-pong" ? "Ping-pong" : "Loop"}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Button
+            variant={motionPlaying ? "solid" : "outline"}
+            size="sm"
+            onClick={playMotion}
+            disabled={!motionArmed}
+            className="h-9 px-3"
+            aria-label={motionPlaying ? "Retrigger Motion" : "Play Motion"}
+          >
+            <Play className="size-3.5" aria-hidden />
+            {motionPlaying ? "Retrigger" : "Play"}
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={stopMotion}
+            disabled={!motionPlaying}
+            className="h-9 px-3"
+          >
+            <Square className="size-3.5" aria-hidden />
+            Stop
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={undo}
+            disabled={!canUndo}
+            className="h-9 px-2"
+          >
+            <Undo2 className="size-3.5" aria-hidden />
+            Undo
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={redo}
+            disabled={!canRedo}
+            className="h-9 px-2"
+          >
+            <Redo2 className="size-3.5" aria-hidden />
+            Redo
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (domain === "drive") {
+    return (
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {DRIVE_PRESET_ORDER.map((kind) => {
+            const on = drivePreset === kind;
+            return (
+              <Button
+                key={kind}
+                variant={on ? "solid" : "outline"}
+                size="sm"
+                className={cn("h-10 min-w-16 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
+                onClick={() => applyDrivePreset(kind)}
+                aria-pressed={on}
+              >
+                <MiniTransfer kind={kind} active={on} />
+                <span className="font-mono text-[10px] uppercase tracking-wider">
+                  {DRIVE_PRESET_LABEL[kind]}
+                </span>
+              </Button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {fxActions.map((action) => (
+            <Button
+              key={action.id}
+              variant="subtle"
+              size="sm"
+              onClick={action.run}
+              disabled={action.disabled}
+              className="h-8 px-2 sm:h-9"
+            >
+              <action.icon className="size-3.5" aria-hidden />
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (domain === "chorus") {
+    return (
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {CHORUS_PRESET_ORDER.map((kind: ChorusPreset) => {
+            const on = chorusPreset === kind;
+            return (
+              <Button
+                key={kind}
+                variant={on ? "solid" : "outline"}
+                size="sm"
+                className={cn(
+                  "h-10 min-w-14 px-2 font-mono text-[10px] uppercase tracking-wider",
+                  on && "text-active-ink",
+                )}
+                onClick={() => applyChorusPreset(kind)}
+                aria-pressed={on}
+              >
+                <span className="mr-1 text-base leading-none">
+                  {kind === "sine" ? "∿" : kind === "triangle" ? "⌁" : kind === "rise" ? "↗" : "⌇"}
+                </span>
+                {CHORUS_PRESET_LABEL[kind]}
+              </Button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {fxActions.map((action) => (
+            <Button
+              key={action.id}
+              variant="subtle"
+              size="sm"
+              onClick={action.run}
+              disabled={action.disabled}
+              className="h-8 px-2 sm:h-9"
+            >
+              <action.icon className="size-3.5" aria-hidden />
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (domain === "space") {
     return (
@@ -282,7 +563,15 @@ export function HeaderBar() {
         <div className="flex items-baseline gap-3">
           <h1 className="phosphor-wordmark text-xl text-fg">Phosphor</h1>
           <p className="hidden font-mono text-[11px] uppercase tracking-[0.2em] text-faint sm:block">
-            {domain === "space" ? "Draw the space" : "Draw the cycle"}
+            {domain === "space"
+              ? "Draw the space"
+              : domain === "motion"
+                ? "Draw the motion"
+                : domain === "drive"
+                  ? "Draw the drive"
+                  : domain === "chorus"
+                    ? "Draw the chorus"
+                    : "Draw the cycle"}
           </p>
         </div>
         <TreatmentSelector />
