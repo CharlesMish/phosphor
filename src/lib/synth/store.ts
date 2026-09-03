@@ -1,10 +1,14 @@
 import { create } from "zustand";
-import { synth, type SynthParams } from "./engine";
+import {
+  OSCILLATOR_SAMPLE_TARGET,
+  cycleMorphSamples,
+  synth,
+  type SynthParams,
+} from "./engine";
 import {
   cloneWave,
   generatePreset,
   invertWave,
-  lerpWaves,
   mirrorWave,
   normalizeWave,
   smoothWave,
@@ -261,10 +265,7 @@ function pushSpacePast(past: SpaceSnap[], snap: SpaceSnap): SpaceSnap[] {
 }
 
 function morphSamples(slotA: number[], slotB: number[], t: number): number[] {
-  const u = Math.min(1, Math.max(0, t));
-  if (u <= 0) return cloneWave(slotA);
-  if (u >= 1) return cloneWave(slotB);
-  return normalizeWave(lerpWaves(slotA, slotB, u), 0.92);
+  return cycleMorphSamples(slotA, slotB, t);
 }
 
 function applySpace(contour: number[], seed: number, metal: boolean, seconds: number) {
@@ -301,7 +302,8 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
     if (!slotA || !slotB) return false;
     const u = clampMotionValue(t);
     const samples = morphSamples(slotA, slotB, u);
-    const reengage = !morphLive && wavesDiffer(prev, samples);
+    const audiblePrevious = normalizeWave(prev, OSCILLATOR_SAMPLE_TARGET);
+    const reengage = !morphLive && wavesDiffer(audiblePrevious, samples);
     set({
       morph: u,
       samples,
@@ -313,7 +315,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
         : {}),
       ...(reengage ? { past: pushPast(get().past, prev), future: [] } : {}),
     });
-    synth.setWaveform(samples, immediate);
+    synth.setCycleMorph(slotA, slotB, u, immediate);
     return true;
   };
 
@@ -331,12 +333,14 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
       ...motionState,
     };
     let cycleSamples: number[] | null = null;
+    let cycleMorphValue: number | null = null;
     let nextDriveAmount: number | null = null;
     let nextChorusMix: number | null = null;
     let nextSpaceMix: number | null = null;
 
     if (routes.cycle.enabled && cycleAvailable && state.slotA && state.slotB) {
       const morph = motionCycleMorph(m, routes.cycle.inverted);
+      cycleMorphValue = morph;
       cycleSamples = morphSamples(state.slotA, state.slotB, morph);
       Object.assign(nextState, {
         morph,
@@ -380,7 +384,19 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
     }
 
     set(nextState);
-    if (cycleSamples) synth.setWaveform(cycleSamples, immediate);
+    if (
+      cycleSamples &&
+      cycleMorphValue !== null &&
+      state.slotA &&
+      state.slotB
+    ) {
+      synth.setCycleMorph(
+        state.slotA,
+        state.slotB,
+        cycleMorphValue,
+        immediate,
+      );
+    }
     if (nextDriveAmount !== null) {
       applyDrive(state.driveCurve, nextDriveAmount, state.driveSafe);
     }

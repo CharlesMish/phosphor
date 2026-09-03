@@ -14,8 +14,8 @@ import { generateSpaceContour } from "./space.ts";
 import { generateDrivePreset } from "./drive.ts";
 import { generateChorusPreset } from "./chorus.ts";
 import { useSynthStore } from "./store.ts";
-import { synth } from "./engine.ts";
-import { generatePreset, lerpWaves, normalizeWave } from "./waveform.ts";
+import { cycleMorphSamples, synth } from "./engine.ts";
+import { generatePreset } from "./waveform.ts";
 
 const initialState = useSynthStore.getInitialState();
 
@@ -424,10 +424,10 @@ describe("MOTION store authority", () => {
 describe("MOTION routing v1", () => {
   beforeEach(resetStore);
 
-  it("keeps Cycle-only routing equivalent to the established morph output", () => {
+  it("keeps Cycle-only routing on the shared phase-coherent morph output", () => {
     const { slotA, slotB } = armMorph();
     const value = 0.37;
-    const expected = normalizeWave(lerpWaves(slotA, slotB, value), 0.92);
+    const expected = cycleMorphSamples(slotA, slotB, value);
 
     useSynthStore.getState().auditionMotion(value, true);
     const state = useSynthStore.getState();
@@ -435,6 +435,32 @@ describe("MOTION routing v1", () => {
     assert.equal(state.morph, value);
     assert.deepEqual(state.samples, expected);
     assert.deepEqual(state.motionRoutes, DEFAULT_MOTION_ROUTES);
+  });
+
+  it("makes manual Morph and Motion Cycle agree at the same position", () => {
+    armMorph();
+    useSynthStore.getState().setMorph(0.35, true);
+    const manual = useSynthStore.getState();
+    const manualSamples = manual.samples.slice();
+
+    manual.auditionMotion(0.35, true);
+    const motion = useSynthStore.getState();
+    assert.equal(motion.morph, manual.morph);
+    assert.deepEqual(motion.samples, manualSamples);
+  });
+
+  it("does not create Cycle history when re-engaging an unchanged endpoint", () => {
+    const { slotA } = armMorph();
+    useSynthStore.setState({
+      samples: slotA.slice(),
+      morph: 0,
+      morphLive: false,
+      past: [],
+      future: [],
+    });
+
+    useSynthStore.getState().setMorph(0, true);
+    assert.equal(useSynthStore.getState().past.length, 0);
   });
 
   it("plays without A/B when any numeric destination is enabled", () => {

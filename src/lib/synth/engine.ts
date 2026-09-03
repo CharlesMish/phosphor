@@ -1,7 +1,9 @@
 import {
   HARMONIC_COUNT,
+  lerpConditionedWaves,
   normalizeWave,
   waveformToCoefficients,
+  wavesDiffer,
 } from "./waveform";
 import { midiToHz } from "./keyboard-map";
 import { SPACE_DEFAULT_SECONDS, buildSpaceBuffer } from "./space";
@@ -29,6 +31,7 @@ export const VOICE_REBALANCE_PEAK = 0.9;
 const CROSSFADE = 0.02;
 const SPACE_FADE = 0.07;
 export const CURVE_UPDATE_INTERVAL_MS = 32;
+export const CYCLE_MORPH_RAMP_SECONDS = CURVE_UPDATE_INTERVAL_MS / 1000;
 const MIN_ATTACK = 0.004;
 const MIN_RELEASE = 0.03;
 const CHORUS_FADE = 0.03;
@@ -68,14 +71,41 @@ type SpaceSpec = {
   seconds: number;
 };
 
+type SingleVoiceSource = {
+  kind: "single";
+  oscillators: [OscillatorNode];
+  mix: GainNode;
+};
+
+type CycleMorphVoiceSource = {
+  kind: "cycle-morph";
+  oscillators: [OscillatorNode, OscillatorNode];
+  mix: GainNode;
+  gainA: GainNode;
+  gainB: GainNode;
+  version: number;
+};
+
+type VoiceSource = SingleVoiceSource | CycleMorphVoiceSource;
+
 type Voice = {
   midi: number;
   freq: number;
-  osc: OscillatorNode;
-  mix: GainNode;
+  source: VoiceSource;
   env: GainNode;
   releasing: boolean;
   born: number;
+};
+
+type CycleMorphRuntime = {
+  sourceA: number[];
+  sourceB: number[];
+  conditionedA: number[];
+  conditionedB: number[];
+  waveA: PeriodicWave | null;
+  waveB: PeriodicWave | null;
+  value: number;
+  version: number;
 };
 
 export type SynthParams = {
@@ -84,6 +114,20 @@ export type SynthParams = {
   volume: number;
   cutoff: number;
 };
+
+/** The exact sample-domain signal represented by the phase-locked A/B pair. */
+export function cycleMorphSamples(
+  slotA: number[],
+  slotB: number[],
+  value: number,
+): number[] {
+  return lerpConditionedWaves(
+    slotA,
+    slotB,
+    value,
+    OSCILLATOR_SAMPLE_TARGET,
+  );
+}
 
 function cutoffHz(t: number): number {
   const x = Math.min(1, Math.max(0, t));
@@ -172,6 +216,7 @@ export class SynthEngine {
   private spaceFadeUntil = 0;
   private spaceTimer: number | null = null;
   private wave: PeriodicWave | null = null;
+  private cycleMorph: CycleMorphRuntime | null = null;
   private voices = new Map<number, Voice>();
   private params: SynthParams = {
     attack: 0.04,
@@ -409,7 +454,10 @@ export class SynthEngine {
 
   setWaveform(samples: number[], immediate = false) {
     this.pendingSamples = samples;
-    if (!this.ctx) return;
+    if (!this.ctx) {
+      this.cycleMorph = null;
+      return;
+    }
     if (immediate) {
       this.flushWaveform();
       return;
@@ -425,6 +473,76 @@ export class SynthEngine {
       this.waveTimer = null;
       this.flushWaveform();
     }, wait);
+  }
+
+  /**
+   * Enter or update the phase-coherent A/B voice path. Endpoint wave tables are
+   * built only when A or B changes; ordinary source frames automate two linear
+   * gains over one control interval and never replace a running oscillator.
+   * Although setPeriodicWave preserves an oscillator's phase, Web Audio does
+   * not define a waveform-table interpolation ramp, so it is not used for the
+   * 30 Hz morph frames. A held single-wave voice crosses into this pair once.
+   */
+  setCycleMorph(
+    slotA: number[],
+    slotB: number[],
+    value: number,
+    _immediate = false,
+  ) {
+    const u = Math.min(1, Math.max(0, value));
+    if (this.waveTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(this.waveTimer);
+      this.waveTimer = null;
+    }
+
+    let runtime = this.cycleMorph;
+    const endpointsChanged =
+      !runtime ||
+      wavesDiffer(runtime.sourceA, slotA) ||
+      wavesDiffer(runtime.sourceB, slotB);
+    if (endpointsChanged) {
+      const endpointsDiffer = wavesDiffer(slotA, slotB);
+      const conditionedA = normalizeWave(slotA, OSCILLATOR_SAMPLE_TARGET);
+      runtime = {
+        sourceA: slotA.slice(),
+        sourceB: slotB.slice(),
+        conditionedA,
+        conditionedB: endpointsDiffer
+          ? normalizeWave(slotB, OSCILLATOR_SAMPLE_TARGET)
+          : conditionedA.slice(),
+        waveA: null,
+        waveB: null,
+        value: u,
+        version: (runtime?.version ?? 0) + 1,
+      };
+      this.cycleMorph = runtime;
+    }
+    if (!runtime) return;
+    runtime.value = u;
+
+    if (!this.ctx) return;
+    if (!runtime.waveA || !runtime.waveB) this.buildCycleMorphWaves(runtime);
+    if (!runtime.waveA || !runtime.waveB) return;
+
+    const now = this.ctx.currentTime;
+    for (const voice of this.voices.values()) {
+      if (voice.releasing) continue;
+      if (
+        voice.source.kind === "cycle-morph" &&
+        voice.source.version === runtime.version
+      ) {
+        this.rampCycleMorphSource(voice.source, u, now);
+        continue;
+      }
+      const next = this.createCycleMorphSource(
+        voice.freq,
+        voice.env,
+        runtime,
+        now,
+        0,
+      );
+      this.transitionVoiceSource(voice, next, now);
+    }
   }
 
   noteOn(midi: number) {
@@ -447,21 +565,15 @@ export class SynthEngine {
     env.gain.linearRampToValueAtTime(VOICE_GAIN, now + attack);
     env.connect(this.filter);
 
-    const mix = this.ctx.createGain();
-    mix.gain.setValueAtTime(1, now);
-    mix.connect(env);
-
-    const osc = this.ctx.createOscillator();
-    osc.setPeriodicWave(this.wave);
-    osc.frequency.setValueAtTime(freq, now);
-    osc.connect(mix);
-    osc.start(now);
-
+    const morph = this.cycleMorph;
+    const source =
+      morph?.waveA && morph.waveB
+        ? this.createCycleMorphSource(freq, env, morph, now, 1)
+        : this.createSingleSource(freq, env, this.wave, now, 1);
     const voice: Voice = {
       midi,
       freq,
-      osc,
-      mix,
+      source,
       env,
       releasing: false,
       born: performance.now(),
@@ -546,6 +658,10 @@ export class SynthEngine {
     this.safety = null;
     this.analyser = null;
     this.wave = null;
+    if (this.cycleMorph) {
+      this.cycleMorph.waveA = null;
+      this.cycleMorph.waveB = null;
+    }
     this.spaceReady = false;
     this.spaceFadeUntil = 0;
     this.rebalanceTarget = 1;
@@ -726,8 +842,14 @@ export class SynthEngine {
     delayBiasL.start();
     delayBiasR.start();
 
-    if (this.pendingSamples) this.flushWaveform();
-    else this.wave = ctx.createPeriodicWave(new Float32Array([0, 0]), new Float32Array([0, 0]));
+    if (this.cycleMorph) this.buildCycleMorphWaves(this.cycleMorph);
+    else if (this.pendingSamples) this.flushWaveform();
+    else {
+      this.wave = ctx.createPeriodicWave(
+        new Float32Array([0, 0]),
+        new Float32Array([0, 0]),
+      );
+    }
     if (this.space) {
       this.pendingSpace = this.space;
       this.flushSpace();
@@ -851,53 +973,176 @@ export class SynthEngine {
     this.lastWaveAt = typeof performance !== "undefined" ? performance.now() : 0;
 
     const conditioned = normalizeWave(samples, OSCILLATOR_SAMPLE_TARGET);
-    const { real, imag } = waveformToCoefficients(conditioned, HARMONIC_COUNT);
-    const wave = this.ctx.createPeriodicWave(real, imag, { disableNormalization: true });
+    const wave = this.createPeriodicWave(conditioned);
     this.wave = wave;
+    this.cycleMorph = null;
 
     const live = [...this.voices.values()].filter((v) => !v.releasing);
     if (live.length === 0) return;
     this.crossfadeVoices(live, wave);
   }
 
+  private createPeriodicWave(conditioned: number[]): PeriodicWave {
+    if (!this.ctx) throw new Error("AudioContext is not available");
+    const { real, imag } = waveformToCoefficients(
+      conditioned,
+      HARMONIC_COUNT,
+    );
+    return this.ctx.createPeriodicWave(real, imag, {
+      disableNormalization: true,
+    });
+  }
+
+  private buildCycleMorphWaves(runtime: CycleMorphRuntime) {
+    if (!this.ctx) return;
+    runtime.waveA = this.createPeriodicWave(runtime.conditionedA);
+    runtime.waveB = wavesDiffer(runtime.sourceA, runtime.sourceB)
+      ? this.createPeriodicWave(runtime.conditionedB)
+      : runtime.waveA;
+    this.wave = runtime.waveA;
+  }
+
+  private createSingleSource(
+    freq: number,
+    env: GainNode,
+    wave: PeriodicWave,
+    now: number,
+    mixLevel: number,
+  ): SingleVoiceSource {
+    if (!this.ctx) throw new Error("AudioContext is not available");
+    const mix = this.ctx.createGain();
+    mix.gain.setValueAtTime(mixLevel, now);
+    mix.connect(env);
+
+    const osc = this.ctx.createOscillator();
+    osc.setPeriodicWave(wave);
+    osc.frequency.setValueAtTime(freq, now);
+    osc.connect(mix);
+    osc.start(now);
+    return { kind: "single", oscillators: [osc], mix };
+  }
+
+  private createCycleMorphSource(
+    freq: number,
+    env: GainNode,
+    runtime: CycleMorphRuntime,
+    now: number,
+    mixLevel: number,
+  ): CycleMorphVoiceSource {
+    if (!this.ctx || !runtime.waveA || !runtime.waveB) {
+      throw new Error("Cycle morph waves are not available");
+    }
+    const mix = this.ctx.createGain();
+    mix.gain.setValueAtTime(mixLevel, now);
+    mix.connect(env);
+
+    const gainA = this.ctx.createGain();
+    const gainB = this.ctx.createGain();
+    gainA.gain.setValueAtTime(1 - runtime.value, now);
+    gainB.gain.setValueAtTime(runtime.value, now);
+    gainA.connect(mix);
+    gainB.connect(mix);
+
+    const oscA = this.ctx.createOscillator();
+    const oscB = this.ctx.createOscillator();
+    oscA.setPeriodicWave(runtime.waveA);
+    oscB.setPeriodicWave(runtime.waveB);
+    oscA.frequency.setValueAtTime(freq, now);
+    oscB.frequency.setValueAtTime(freq, now);
+    oscA.connect(gainA);
+    oscB.connect(gainB);
+    // Scheduling both starts at the same AudioContext time keeps their phases
+    // locked for the entire lifetime of this source pair.
+    oscA.start(now);
+    oscB.start(now);
+    return {
+      kind: "cycle-morph",
+      oscillators: [oscA, oscB],
+      mix,
+      gainA,
+      gainB,
+      version: runtime.version,
+    };
+  }
+
+  private holdParam(param: AudioParam, now: number) {
+    if (typeof param.cancelAndHoldAtTime === "function") {
+      param.cancelAndHoldAtTime(now);
+      return;
+    }
+    const current = param.value;
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(current, now);
+  }
+
+  private rampCycleMorphSource(
+    source: CycleMorphVoiceSource,
+    value: number,
+    now: number,
+  ) {
+    this.holdParam(source.gainA.gain, now);
+    this.holdParam(source.gainB.gain, now);
+    source.gainA.gain.linearRampToValueAtTime(
+      1 - value,
+      now + CYCLE_MORPH_RAMP_SECONDS,
+    );
+    source.gainB.gain.linearRampToValueAtTime(
+      value,
+      now + CYCLE_MORPH_RAMP_SECONDS,
+    );
+  }
+
+  private transitionVoiceSource(
+    voice: Voice,
+    next: VoiceSource,
+    now: number,
+  ) {
+    const previous = voice.source;
+    next.mix.gain.linearRampToValueAtTime(1, now + CROSSFADE);
+    this.holdParam(previous.mix.gain, now);
+    previous.mix.gain.linearRampToValueAtTime(0, now + CROSSFADE);
+    this.stopVoiceSource(previous, now + CROSSFADE + 0.01, () => {
+      this.disconnectVoiceSource(previous);
+    });
+    voice.source = next;
+  }
+
   private crossfadeVoices(live: Voice[], wave: PeriodicWave) {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    const fade = CROSSFADE;
-
     for (const voice of live) {
-      const newMix = this.ctx.createGain();
-      newMix.gain.setValueAtTime(0, now);
-      newMix.gain.linearRampToValueAtTime(1, now + fade);
-      newMix.connect(voice.env);
+      const next = this.createSingleSource(
+        voice.freq,
+        voice.env,
+        wave,
+        now,
+        0,
+      );
+      this.transitionVoiceSource(voice, next, now);
+    }
+  }
 
-      const newOsc = this.ctx.createOscillator();
-      newOsc.setPeriodicWave(wave);
-      newOsc.frequency.setValueAtTime(voice.freq, now);
-      newOsc.connect(newMix);
-      newOsc.start(now);
-
-      const oldOsc = voice.osc;
-      const oldMix = voice.mix;
-      oldMix.gain.cancelScheduledValues(now);
-      oldMix.gain.setValueAtTime(Math.max(0, oldMix.gain.value), now);
-      oldMix.gain.linearRampToValueAtTime(0, now + fade);
+  private stopVoiceSource(
+    source: VoiceSource,
+    when: number,
+    onEnded: () => void,
+  ) {
+    let remaining = source.oscillators.length;
+    let finished = false;
+    const finishOscillator = () => {
+      if (finished) return;
+      remaining -= 1;
+      if (remaining > 0) return;
+      finished = true;
+      onEnded();
+    };
+    for (const oscillator of source.oscillators) {
+      oscillator.onended = finishOscillator;
       try {
-        oldOsc.stop(now + fade + 0.01);
+        oscillator.stop(when);
       } catch {
-        /* already stopped */
+        finishOscillator();
       }
-      oldOsc.onended = () => {
-        try {
-          oldOsc.disconnect();
-          oldMix.disconnect();
-        } catch {
-          /* already gone */
-        }
-      };
-
-      voice.osc = newOsc;
-      voice.mix = newMix;
     }
   }
 
@@ -911,13 +1156,10 @@ export class SynthEngine {
     const current = Math.max(0.0001, env.value);
     env.setValueAtTime(current, now);
     env.exponentialRampToValueAtTime(0.0001, now + release);
-    try {
-      voice.osc.stop(now + release + 0.03);
-    } catch {
-      /* already stopped */
-    }
     const watch = voice;
-    voice.osc.onended = () => this.finishVoice(watch);
+    this.stopVoiceSource(voice.source, now + release + 0.03, () => {
+      this.finishVoice(watch);
+    });
     window.setTimeout(() => this.finishVoice(watch), (release + 0.08) * 1000);
     this.rebalance(now);
     this.emitVoices();
@@ -930,12 +1172,9 @@ export class SynthEngine {
     voice.env.gain.cancelScheduledValues(now);
     voice.env.gain.setValueAtTime(Math.max(0.0001, voice.env.gain.value), now);
     voice.env.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
-    try {
-      voice.osc.stop(now + seconds + 0.02);
-    } catch {
-      /* already stopped */
-    }
-    voice.osc.onended = () => this.disconnectVoice(voice);
+    this.stopVoiceSource(voice.source, now + seconds + 0.02, () => {
+      this.disconnectVoice(voice);
+    });
     window.setTimeout(() => this.disconnectVoice(voice), (seconds + 0.08) * 1000);
   }
 
@@ -948,10 +1187,22 @@ export class SynthEngine {
   }
 
   private disconnectVoice(voice: Voice) {
+    this.disconnectVoiceSource(voice.source);
     try {
-      voice.osc.disconnect();
-      voice.mix.disconnect();
       voice.env.disconnect();
+    } catch {
+      /* already disconnected */
+    }
+  }
+
+  private disconnectVoiceSource(source: VoiceSource) {
+    try {
+      for (const oscillator of source.oscillators) oscillator.disconnect();
+      if (source.kind === "cycle-morph") {
+        source.gainA.disconnect();
+        source.gainB.disconnect();
+      }
+      source.mix.disconnect();
     } catch {
       /* already disconnected */
     }

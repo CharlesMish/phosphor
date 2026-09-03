@@ -14,6 +14,7 @@ import {
   sampleTransfer,
 } from "./drive.ts";
 import {
+  CYCLE_MORPH_RAMP_SECONDS,
   CURVE_UPDATE_INTERVAL_MS,
   DRIVE_DC_BLOCK_HZ,
   DRIVE_OVERSAMPLE,
@@ -21,13 +22,17 @@ import {
   OSCILLATOR_SAMPLE_TARGET,
   SynthEngine,
   VOICE_GAIN,
+  cycleMorphSamples,
   phaseAlignedPreDrivePeak,
   voiceRebalanceGain,
 } from "./engine.ts";
 import { useSynthStore } from "./store.ts";
 import {
   generatePreset,
+  invertWave,
+  lerpWaves,
   normalizeWave,
+  peakOf,
   waveformToCoefficients,
 } from "./waveform.ts";
 import { chorusMixGains, generateChorusPreset } from "./chorus.ts";
@@ -37,6 +42,11 @@ class TestAudioParam {
   value = 0;
   readonly setValueCalls: number[] = [];
   readonly holdCalls: number[] = [];
+  readonly linearRampCalls: Array<{
+    prior: number;
+    value: number;
+    endTime: number;
+  }> = [];
   readonly targetCalls: Array<{
     prior: number;
     value: number;
@@ -49,7 +59,8 @@ class TestAudioParam {
     return this;
   }
 
-  linearRampToValueAtTime(value: number) {
+  linearRampToValueAtTime(value: number, endTime = 0) {
+    this.linearRampCalls.push({ prior: this.value, value, endTime });
     this.value = value;
     return this;
   }
@@ -168,17 +179,21 @@ class TestOscillatorNode extends TestAudioNode {
   wave: PeriodicWave | null = null;
   started = false;
   stopped = false;
+  readonly startTimes: number[] = [];
+  readonly stopTimes: number[] = [];
 
   setPeriodicWave(wave: PeriodicWave) {
     this.wave = wave;
   }
 
-  start() {
+  start(when = 0) {
     this.started = true;
+    this.startTimes.push(when);
   }
 
-  stop() {
+  stop(when = 0) {
     this.stopped = true;
+    this.stopTimes.push(when);
   }
 }
 
@@ -223,6 +238,7 @@ class TestAudioContext {
   readonly delays: TestDelayNode[] = [];
   readonly mergers: TestChannelMergerNode[] = [];
   readonly constantSources: TestConstantSourceNode[] = [];
+  readonly gains: TestGainNode[] = [];
   readonly oscillators: TestOscillatorNode[] = [];
   readonly periodicWaves: TestPeriodicWave[] = [];
   readonly analysers: TestAnalyserNode[] = [];
@@ -245,7 +261,9 @@ class TestAudioContext {
   }
 
   createGain() {
-    return new TestGainNode();
+    const node = new TestGainNode();
+    this.gains.push(node);
+    return node;
   }
 
   createConvolver() {
@@ -332,6 +350,57 @@ function conditionedPeriodicPeak(samples: number[], probeCount = 8192): number {
     peak = Math.max(peak, Math.abs(periodicValue(wave, i / probeCount)));
   }
   return peak;
+}
+
+function withTestEngine(
+  run: (
+    engine: SynthEngine,
+    context: TestAudioContext,
+    timers: Map<number, { callback: () => void; delay: number }>,
+  ) => void,
+) {
+  const originalAudioContext = globalThis.AudioContext;
+  const originalWindow = globalThis.window;
+  let nextTimer = 1;
+  const timers = new Map<
+    number,
+    { callback: () => void; delay: number }
+  >();
+  const engine = new SynthEngine();
+  Object.assign(globalThis, {
+    AudioContext: TestAudioContext,
+    window: {
+      setTimeout: (callback: () => void, delay = 0) => {
+        const id = nextTimer++;
+        timers.set(id, { callback, delay });
+        return id;
+      },
+      clearTimeout: (id: number) => timers.delete(id),
+    },
+  });
+
+  try {
+    engine.unlock();
+    const context = TestAudioContext.last;
+    assert.ok(context);
+    run(engine, context, timers);
+  } finally {
+    engine.dispose();
+    Object.assign(globalThis, {
+      AudioContext: originalAudioContext,
+      window: originalWindow,
+    });
+  }
+}
+
+function assertSamplesNear(actual: number[], expected: number[], epsilon = 1e-12) {
+  assert.equal(actual.length, expected.length);
+  for (let index = 0; index < actual.length; index++) {
+    assert.ok(
+      Math.abs((actual[index] ?? 0) - (expected[index] ?? 0)) < epsilon,
+      `sample ${index}: ${actual[index]} versus ${expected[index]}`,
+    );
+  }
 }
 
 describe("DRIVE transfer curve", () => {
@@ -487,6 +556,287 @@ describe("DRIVE conservative audition", () => {
         assert.ok(gain > 0 && gain <= 1, `${preset} ${amount}: ${gain}`);
       }
     }
+  });
+});
+
+describe("CYCLE morph normalization diagnosis", () => {
+  it("keeps identical endpoints invariant at every morph value", () => {
+    const sine = generatePreset("sine");
+    const conditioned = normalizeWave(sine, OSCILLATOR_SAMPLE_TARGET);
+    for (const value of [0, 0.01, 0.35, 0.5, 0.83, 1]) {
+      assert.deepEqual(cycleMorphSamples(sine, sine, value), conditioned);
+    }
+  });
+
+  it("preserves an honest linear sine to inverted-sine cancellation", () => {
+    const sine = generatePreset("sine");
+    const inverted = invertWave(sine);
+    const cases = [
+      { value: 0.1, honestPeak: 0.72 },
+      { value: 0.25, honestPeak: 0.45 },
+      { value: 0.49, honestPeak: 0.018 },
+      { value: 0.5, honestPeak: 0 },
+    ];
+
+    for (const { value, honestPeak } of cases) {
+      const rawBlend = lerpWaves(sine, inverted, value);
+      const legacyFirstPass = normalizeWave(rawBlend, 0.92);
+      const legacyEnginePass = normalizeWave(
+        legacyFirstPass,
+        OSCILLATOR_SAMPLE_TARGET,
+      );
+      const honest = cycleMorphSamples(sine, inverted, value);
+
+      assert.ok(Math.abs(peakOf(honest) - honestPeak) < 1e-12);
+      if (value === 0.5) {
+        assert.equal(peakOf(legacyEnginePass), 0);
+      } else {
+        assert.ok(Math.abs(peakOf(legacyFirstPass) - 0.92) < 1e-12);
+        assert.ok(
+          Math.abs(peakOf(legacyEnginePass) - OSCILLATOR_SAMPLE_TARGET) <
+            1e-12,
+        );
+      }
+    }
+  });
+
+  it("linearly interpolates similar sine and triangle-derived endpoints", () => {
+    const sine = generatePreset("sine");
+    const nearSine = sine.map(
+      (value, index) =>
+        value + 0.015 * Math.sin((4 * Math.PI * index) / sine.length),
+    );
+    const triangle = generatePreset("triangle");
+    const nearTriangle = triangle.map(
+      (value, index) =>
+        value + 0.01 * Math.sin((6 * Math.PI * index) / triangle.length),
+    );
+
+    for (const [a, b] of [
+      [sine, nearSine],
+      [triangle, nearTriangle],
+    ]) {
+      const conditionedA = normalizeWave(a, OSCILLATOR_SAMPLE_TARGET);
+      const conditionedB = normalizeWave(b, OSCILLATOR_SAMPLE_TARGET);
+      assertSamplesNear(
+        cycleMorphSamples(a, b, 0.5),
+        lerpWaves(conditionedA, conditionedB, 0.5),
+      );
+    }
+  });
+});
+
+describe("phase-coherent CYCLE morph runtime", () => {
+  it("characterizes the former generic waveform path as structural per frame", () => {
+    withTestEngine((engine, context) => {
+      const sine = generatePreset("sine");
+      engine.setWaveform(sine, true);
+      engine.noteOn(60);
+      const before = context.oscillators.length;
+      engine.setWaveform(sine, true);
+      engine.setWaveform(sine, true);
+      assert.equal(
+        context.oscillators.length,
+        before + 2,
+        "even identical generic updates replace the held oscillator",
+      );
+    });
+  });
+
+  it("does not churn oscillators or wave tables for identical A/B Motion", () => {
+    withTestEngine((engine, context) => {
+      const sine = generatePreset("sine");
+      engine.setCycleMorph(sine, sine, 0);
+      engine.noteOn(60);
+      const oscillatorCount = context.oscillators.length;
+      const waveCount = context.periodicWaves.length;
+      assert.equal(oscillatorCount, 4, "two Chorus LFOs plus one A/B pair");
+      const oscA = context.oscillators[2];
+      const oscB = context.oscillators[3];
+      assert.ok(oscA);
+      assert.ok(oscB);
+      assert.deepEqual(oscA.startTimes, oscB.startTimes);
+      assert.equal(
+        oscA.wave,
+        oscB.wave,
+        "identical endpoints share one wave table",
+      );
+
+      for (const value of [0.1, 0.8, 0.35, 1, 0.02]) {
+        engine.setCycleMorph(sine, sine, value);
+      }
+      assert.equal(context.oscillators.length, oscillatorCount);
+      assert.equal(context.periodicWaves.length, waveCount);
+      const gainA = oscA.connections[0];
+      const gainB = oscB.connections[0];
+      assert.ok(gainA instanceof TestGainNode);
+      assert.ok(gainB instanceof TestGainNode);
+      assert.ok(Math.abs(gainA.gain.value + gainB.gain.value - 1) < 1e-12);
+      assert.deepEqual(
+        cycleMorphSamples(sine, sine, 0.02),
+        normalizeWave(sine, OSCILLATOR_SAMPLE_TARGET),
+      );
+    });
+  });
+
+  it("uses one phase-locked pair and smooth gains for nearly-identical A/B", () => {
+    withTestEngine((engine, context) => {
+      const sine = generatePreset("sine");
+      const nearby = sine.map(
+        (value, index) =>
+          value + 0.01 * Math.sin((4 * Math.PI * index) / sine.length),
+      );
+      engine.setCycleMorph(sine, nearby, 0.2);
+      engine.noteOn(64);
+      const oscillatorCount = context.oscillators.length;
+      const waveCount = context.periodicWaves.length;
+      const oscA = context.oscillators[2];
+      const oscB = context.oscillators[3];
+      assert.ok(oscA);
+      assert.ok(oscB);
+      assert.deepEqual(oscA.startTimes, oscB.startTimes);
+      const gainA = oscA.connections[0];
+      const gainB = oscB.connections[0];
+      assert.ok(gainA instanceof TestGainNode);
+      assert.ok(gainB instanceof TestGainNode);
+
+      engine.setCycleMorph(sine, nearby, 0.23);
+      engine.setCycleMorph(sine, nearby, 0.18);
+      assert.equal(context.oscillators.length, oscillatorCount);
+      assert.equal(context.periodicWaves.length, waveCount);
+      assert.ok(
+        Math.abs((gainA.gain.linearRampCalls.at(-1)?.value ?? 0) - 0.82) <
+          1e-12,
+      );
+      assert.equal(gainB.gain.linearRampCalls.at(-1)?.value, 0.18);
+      assert.equal(
+        gainA.gain.linearRampCalls.at(-1)?.endTime,
+        CYCLE_MORPH_RAMP_SECONDS,
+      );
+      assert.equal(
+        gainB.gain.linearRampCalls.at(-1)?.endTime,
+        CYCLE_MORPH_RAMP_SECONDS,
+      );
+    });
+  });
+
+  it("makes one click-safe structural transition for an already-held note", () => {
+    withTestEngine((engine, context) => {
+      const sine = generatePreset("sine");
+      const triangle = generatePreset("triangle");
+      engine.setWaveform(sine, true);
+      engine.noteOn(60);
+      const original = context.oscillators[2];
+      assert.ok(original);
+      assert.equal(context.oscillators.length, 3);
+
+      engine.setCycleMorph(sine, triangle, 0.25);
+      assert.equal(context.oscillators.length, 5);
+      assert.equal(original.stopped, true);
+      const pairCount = context.oscillators.length;
+      const waveCount = context.periodicWaves.length;
+
+      for (const value of [0.28, 0.31, 0.2, 0.9]) {
+        engine.setCycleMorph(sine, triangle, value);
+      }
+      assert.equal(context.oscillators.length, pairCount);
+      assert.equal(context.periodicWaves.length, waveCount);
+    });
+  });
+
+  it("keeps direct CYCLE drawing on its established single-wave transition", () => {
+    withTestEngine((engine, context) => {
+      engine.setWaveform(generatePreset("sine"), true);
+      engine.noteOn(60);
+      const before = context.oscillators.length;
+      engine.setWaveform(generatePreset("triangle"), true);
+      assert.equal(context.oscillators.length, before + 1);
+      assert.equal(context.oscillators[2]?.stopped, true);
+    });
+  });
+
+  it("returns a held morph pair to one direct-CYCLE oscillator in one transition", () => {
+    withTestEngine((engine, context) => {
+      engine.setCycleMorph(
+        generatePreset("sine"),
+        generatePreset("triangle"),
+        0.4,
+      );
+      engine.noteOn(60);
+      const pairA = context.oscillators[2];
+      const pairB = context.oscillators[3];
+      assert.ok(pairA);
+      assert.ok(pairB);
+
+      engine.setWaveform(generatePreset("saw"), true);
+      assert.equal(context.oscillators.length, 5);
+      assert.equal(pairA.stopped, true);
+      assert.equal(pairB.stopped, true);
+      const direct = context.oscillators[4];
+      assert.ok(direct);
+      assert.equal(direct.stopped, false);
+    });
+  });
+
+  it("bounds 12-voice pair lifecycle through release and stealing", () => {
+    withTestEngine((engine, context) => {
+      const voiceEvents: number[][] = [];
+      engine.onVoices((notes) => voiceEvents.push(notes));
+      engine.setCycleMorph(
+        generatePreset("sine"),
+        generatePreset("triangle"),
+        0.35,
+      );
+      for (let midi = 60; midi < 60 + MAX_VOICES; midi++) engine.noteOn(midi);
+      assert.equal(voiceEvents.at(-1)?.length, MAX_VOICES);
+      assert.equal(
+        context.oscillators.filter((oscillator) => !oscillator.stopped).length,
+        2 + MAX_VOICES * 2,
+      );
+
+      engine.noteOn(72);
+      assert.equal(voiceEvents.at(-1)?.length, MAX_VOICES);
+      assert.equal(context.oscillators.length, 2 + (MAX_VOICES + 1) * 2);
+      assert.equal(
+        context.oscillators.filter((oscillator) => !oscillator.stopped).length,
+        2 + MAX_VOICES * 2,
+      );
+
+      const releasedA = context.oscillators.at(-2);
+      const releasedB = context.oscillators.at(-1);
+      const gainA = releasedA?.connections[0];
+      const gainB = releasedB?.connections[0];
+      assert.ok(releasedA);
+      assert.ok(releasedB);
+      assert.ok(gainA instanceof TestGainNode);
+      assert.ok(gainB instanceof TestGainNode);
+      const mix = gainA.connections[0];
+      assert.ok(mix instanceof TestGainNode);
+      const env = mix.connections[0];
+      assert.ok(env instanceof TestGainNode);
+
+      engine.noteOff(72);
+      assert.equal(voiceEvents.at(-1)?.length, MAX_VOICES - 1);
+      assert.equal(releasedA.stopped, true);
+      assert.equal(releasedB.stopped, true);
+      releasedA.onended?.();
+      assert.ok(releasedB.connections.length > 0);
+      releasedB.onended?.();
+      assert.equal(releasedA.connections.length, 0);
+      assert.equal(releasedB.connections.length, 0);
+      assert.equal(gainA.connections.length, 0);
+      assert.equal(gainB.connections.length, 0);
+      assert.equal(mix.connections.length, 0);
+      assert.equal(env.connections.length, 0);
+
+      engine.allNotesOff();
+      assert.deepEqual(voiceEvents.at(-1), []);
+      assert.equal(
+        context.oscillators.filter((oscillator) => !oscillator.stopped).length,
+        2,
+        "only the two Chorus LFOs remain scheduled",
+      );
+    });
   });
 });
 
