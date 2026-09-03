@@ -52,13 +52,24 @@ function RouteToggle({
 }) {
   const setEnabled = useSynthStore((s) => s.setMotionRouteEnabled);
   return (
-    <label className="flex min-w-24 items-center gap-2">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => setEnabled(route, event.currentTarget.checked)}
-        className="size-4 shrink-0 accent-active outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
-      />
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => setEnabled(route, !checked)}
+      className="flex min-w-24 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "grid size-4 shrink-0 place-items-center rounded-sm border text-[10px] leading-none",
+          checked
+            ? "border-active bg-active text-active-ink"
+            : "border-faint text-transparent",
+        )}
+      >
+        ✓
+      </span>
       <span
         className={cn(
           "font-mono text-[10px] uppercase tracking-[0.14em]",
@@ -67,7 +78,7 @@ function RouteToggle({
       >
         {label}
       </span>
-    </label>
+    </button>
   );
 }
 
