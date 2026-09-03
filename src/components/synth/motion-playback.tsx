@@ -16,19 +16,24 @@ export function MotionPlaybackController() {
   useEffect(() => {
     if (!playing) return;
     const state = useSynthStore.getState();
-    const path = state.motionPath.slice();
-    const timing = {
-      bpm: state.motionBpm,
-      beats: state.motionBeats,
-      mode: state.motionMode,
-    } as const;
+    const run = state.motionRun;
+    if (!run) return;
     const startedAt = clockSeconds();
 
     const tick = () => {
-      const frame = motionFrameAtTime(path, clockSeconds() - startedAt, timing);
+      const frame = motionFrameAtTime(
+        run.path,
+        clockSeconds() - startedAt,
+        run.timing,
+      );
       useSynthStore
         .getState()
-        .setMotionPlaybackPosition(frame.position, frame.progress, frame.complete, runId);
+        .setMotionPlaybackPosition(
+          frame.value,
+          frame.progress,
+          frame.complete,
+          runId,
+        );
     };
 
     const timer = window.setInterval(tick, CONTROL_INTERVAL_MS);

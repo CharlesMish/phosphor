@@ -42,6 +42,7 @@ import {
 } from "@/lib/synth/chorus";
 import { rangeLabel } from "@/lib/synth/keyboard-map";
 import {
+  hasPlayableMotionRoute,
   MOTION_BEAT_LENGTHS,
   MOTION_BPM_MAX,
   MOTION_BPM_MIN,
@@ -50,6 +51,7 @@ import {
   type MotionMode,
 } from "@/lib/synth/motion";
 import { cn } from "@/lib/utils";
+import { MotionRoutes } from "./motion-routes";
 
 function MiniWave({ kind, active }: { kind: WavePreset; active: boolean }) {
   const w = 44;
@@ -221,7 +223,9 @@ export function PresetBar() {
   const undo = useSynthStore((s) => s.undo);
   const redo = useSynthStore((s) => s.redo);
   const motionPlaying = useSynthStore((s) => s.motionPlaying);
-  const motionArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
+  const motionCanPlay = useSynthStore((s) =>
+    hasPlayableMotionRoute(s.motionRoutes, Boolean(s.slotA && s.slotB)),
+  );
   const playMotion = useSynthStore((s) => s.playMotion);
   const stopMotion = useSynthStore((s) => s.stopMotion);
   const motionBpm = useSynthStore((s) => s.motionBpm);
@@ -277,103 +281,117 @@ export function PresetBar() {
 
   if (domain === "motion") {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-            <span>BPM</span>
-            <input
-              type="number"
-              min={MOTION_BPM_MIN}
-              max={MOTION_BPM_MAX}
-              step={1}
-              value={motionBpm}
-              disabled={motionPlaying}
-              onChange={(event) => {
-                const next = event.currentTarget.valueAsNumber;
-                if (Number.isFinite(next)) setMotionBpm(next);
-              }}
-              className="h-9 w-16 rounded-md bg-surface-2 px-2 text-center text-xs tabular-nums text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
-              aria-label="Motion BPM"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-            <span>Length</span>
-            <select
-              value={motionBeats}
-              disabled={motionPlaying}
-              onChange={(event) =>
-                setMotionBeats(Number(event.currentTarget.value) as MotionBeats)
-              }
-              className="h-9 rounded-md bg-surface-2 px-2 text-xs text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
-              aria-label="Motion length"
+      <div className="flex flex-col gap-2">
+        <MotionRoutes />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+              <span>BPM</span>
+              <input
+                type="number"
+                min={MOTION_BPM_MIN}
+                max={MOTION_BPM_MAX}
+                step={1}
+                value={motionBpm}
+                disabled={motionPlaying}
+                onChange={(event) => {
+                  const next = event.currentTarget.valueAsNumber;
+                  if (Number.isFinite(next)) setMotionBpm(next);
+                }}
+                className="h-9 w-16 rounded-md bg-surface-2 px-2 text-center text-xs tabular-nums text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+                aria-label="Motion BPM"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+              <span>Length</span>
+              <select
+                value={motionBeats}
+                disabled={motionPlaying}
+                onChange={(event) =>
+                  setMotionBeats(Number(event.currentTarget.value) as MotionBeats)
+                }
+                className="h-9 rounded-md bg-surface-2 px-2 text-xs text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+                aria-label="Motion length"
+              >
+                {MOTION_BEAT_LENGTHS.map((beats) => (
+                  <option key={beats} value={beats}>
+                    {beats} {beats === 1 ? "beat" : "beats"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+              <span>Mode</span>
+              <select
+                value={motionMode}
+                disabled={motionPlaying}
+                onChange={(event) =>
+                  setMotionMode(event.currentTarget.value as MotionMode)
+                }
+                className="h-9 rounded-md bg-surface-2 px-2 text-xs text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
+                aria-label="Motion mode"
+              >
+                {MOTION_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode === "one-shot"
+                      ? "One-shot"
+                      : mode === "ping-pong"
+                        ? "Ping-pong"
+                        : "Loop"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              variant={motionPlaying ? "solid" : "outline"}
+              size="sm"
+              onClick={playMotion}
+              disabled={!motionCanPlay}
+              className="h-9 px-3"
+              aria-label={motionPlaying ? "Retrigger Motion" : "Play Motion"}
             >
-              {MOTION_BEAT_LENGTHS.map((beats) => (
-                <option key={beats} value={beats}>
-                  {beats} {beats === 1 ? "beat" : "beats"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
-            <span>Mode</span>
-            <select
-              value={motionMode}
-              disabled={motionPlaying}
-              onChange={(event) => setMotionMode(event.currentTarget.value as MotionMode)}
-              className="h-9 rounded-md bg-surface-2 px-2 text-xs text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-50"
-              aria-label="Motion mode"
+              <Play className="size-3.5" aria-hidden />
+              {motionPlaying ? "Retrigger" : "Play"}
+            </Button>
+            <Button
+              variant="subtle"
+              size="sm"
+              onClick={stopMotion}
+              disabled={!motionPlaying}
+              className="h-9 px-3"
             >
-              {MOTION_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {mode === "one-shot" ? "One-shot" : mode === "ping-pong" ? "Ping-pong" : "Loop"}
-                </option>
-              ))}
-            </select>
-          </label>
+              <Square className="size-3.5" aria-hidden />
+              Stop
+            </Button>
+            <Button
+              variant="subtle"
+              size="sm"
+              onClick={undo}
+              disabled={!canUndo}
+              className="h-9 px-2"
+            >
+              <Undo2 className="size-3.5" aria-hidden />
+              Undo
+            </Button>
+            <Button
+              variant="subtle"
+              size="sm"
+              onClick={redo}
+              disabled={!canRedo}
+              className="h-9 px-2"
+            >
+              <Redo2 className="size-3.5" aria-hidden />
+              Redo
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <Button
-            variant={motionPlaying ? "solid" : "outline"}
-            size="sm"
-            onClick={playMotion}
-            disabled={!motionArmed}
-            className="h-9 px-3"
-            aria-label={motionPlaying ? "Retrigger Motion" : "Play Motion"}
-          >
-            <Play className="size-3.5" aria-hidden />
-            {motionPlaying ? "Retrigger" : "Play"}
-          </Button>
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={stopMotion}
-            disabled={!motionPlaying}
-            className="h-9 px-3"
-          >
-            <Square className="size-3.5" aria-hidden />
-            Stop
-          </Button>
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={undo}
-            disabled={!canUndo}
-            className="h-9 px-2"
-          >
-            <Undo2 className="size-3.5" aria-hidden />
-            Undo
-          </Button>
-          <Button
-            variant="subtle"
-            size="sm"
-            onClick={redo}
-            disabled={!canRedo}
-            className="h-9 px-2"
-          >
-            <Redo2 className="size-3.5" aria-hidden />
-            Redo
-          </Button>
-        </div>
+        {!motionCanPlay && (
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+            Enable a Motion destination
+          </p>
+        )}
       </div>
     );
   }

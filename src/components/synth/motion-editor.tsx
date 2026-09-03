@@ -70,14 +70,12 @@ export function MotionEditor() {
   const motionProgress = useSynthStore((s) => s.motionProgress);
   const motionBpm = useSynthStore((s) => s.motionBpm);
   const motionBeats = useSynthStore((s) => s.motionBeats);
-  const armed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
   const setLiveMotionPath = useSynthStore((s) => s.setLiveMotionPath);
   const finishMotionGesture = useSynthStore((s) => s.finishMotionGesture);
   const auditionMotion = useSynthStore((s) => s.auditionMotion);
   const stopMotion = useSynthStore((s) => s.stopMotion);
 
   const pathRef = useRef(motionPath);
-  const armedRef = useRef(armed);
   const playingRef = useRef(motionPlaying);
   const progressRef = useRef(motionProgress);
   const durationRef = useRef(motionDurationSeconds(motionBpm, motionBeats));
@@ -87,7 +85,6 @@ export function MotionEditor() {
   const lastValueRef = useRef<number | null>(null);
   const originRef = useRef<number[] | null>(null);
 
-  armedRef.current = armed;
   playingRef.current = motionPlaying;
   progressRef.current = motionProgress;
   durationRef.current = motionDurationSeconds(motionBpm, motionBeats);
@@ -125,13 +122,12 @@ export function MotionEditor() {
     const path = pathRef.current;
     const n = path.length || MOTION_SIZE;
     ctx.save();
-    ctx.globalAlpha = armedRef.current ? 1 : 0.32;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.strokeStyle = tokens.tracePrimary;
     ctx.lineWidth = tokens.traceWidth;
     ctx.shadowColor = tokens.tracePrimary;
-    ctx.shadowBlur = armedRef.current ? tokens.traceGlow : 0;
+    ctx.shadowBlur = tokens.traceGlow;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
       const x = xAt(i / Math.max(1, n - 1));
@@ -167,8 +163,8 @@ export function MotionEditor() {
     ctx.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText("B", 14, yAt(1));
-    ctx.fillText("A", 14, yAt(0));
+    ctx.fillText("1", 14, yAt(1));
+    ctx.fillText("0", 14, yAt(0));
     ctx.textBaseline = "top";
     ctx.fillText("0 s", PAD_X, PAD_Y + innerH + 8);
     ctx.textAlign = "right";
@@ -177,12 +173,11 @@ export function MotionEditor() {
 
   useEffect(() => {
     pathRef.current = motionPath;
-    armedRef.current = armed;
     playingRef.current = motionPlaying;
     progressRef.current = motionProgress;
     durationRef.current = motionDurationSeconds(motionBpm, motionBeats);
     paint();
-  }, [motionPath, armed, motionPlaying, motionProgress, motionBpm, motionBeats, paint]);
+  }, [motionPath, motionPlaying, motionProgress, motionBpm, motionBeats, paint]);
 
   useEffect(() => {
     paint();
@@ -224,7 +219,7 @@ export function MotionEditor() {
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!armedRef.current || drawingRef.current) return;
+    if (drawingRef.current) return;
     const hit = eventToHit(e);
     if (!hit) return;
     synth.unlock();
@@ -293,7 +288,7 @@ export function MotionEditor() {
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <EditorTabs />
           <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-faint sm:inline">
-            Motion · A/B trajectory
+            Motion · routing source
           </span>
         </div>
         <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
@@ -308,14 +303,8 @@ export function MotionEditor() {
         onPointerMove={onPointerMove}
         onPointerUp={endDraw}
         onPointerCancel={endDraw}
-        aria-label="Draw A to B motion trajectory"
-        aria-disabled={!armed}
+        aria-label="Draw normalized Motion routing source from 0 to 1"
       />
-      {!armed && (
-        <p className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-xs tracking-wide text-muted/80">
-          Capture A + B to use Motion
-        </p>
-      )}
     </div>
   );
 }

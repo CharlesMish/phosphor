@@ -1,4 +1,4 @@
-/** Drawing points for the normalized A/B motion trajectory. */
+/** Drawing points for one normalized musical motion source. */
 export const MOTION_SIZE = 512;
 
 export const MOTION_BPM_MIN = 40;
@@ -19,6 +19,37 @@ export type MotionTiming = Readonly<{
   mode: MotionMode;
 }>;
 
+export type MotionNumericRoute = Readonly<{
+  enabled: boolean;
+  from: number;
+  to: number;
+}>;
+
+export type MotionRoutes = Readonly<{
+  cycle: Readonly<{ enabled: boolean; inverted: boolean }>;
+  driveAmount: MotionNumericRoute;
+  chorusMix: MotionNumericRoute;
+  spaceMix: MotionNumericRoute;
+}>;
+
+export type MotionRouteId = keyof MotionRoutes;
+export type MotionNumericRouteId = Exclude<MotionRouteId, "cycle">;
+export type MotionRouteEndpoint = "from" | "to";
+
+export const DEFAULT_MOTION_ROUTES: MotionRoutes = {
+  cycle: { enabled: true, inverted: false },
+  driveAmount: { enabled: false, from: 0, to: 0.25 },
+  chorusMix: { enabled: false, from: 0, to: 0.35 },
+  spaceMix: { enabled: false, from: 0.38, to: 0.7 },
+};
+
+export type MotionRunSnapshot = Readonly<{
+  path: number[];
+  timing: MotionTiming;
+  routes: MotionRoutes;
+  cycleAvailable: boolean;
+}>;
+
 export const DEFAULT_MOTION_TIMING: MotionTiming = {
   bpm: DEFAULT_MOTION_BPM,
   beats: DEFAULT_MOTION_BEATS,
@@ -27,7 +58,7 @@ export const DEFAULT_MOTION_TIMING: MotionTiming = {
 
 export type MotionFrame = {
   progress: number;
-  position: number;
+  value: number;
   complete: boolean;
 };
 
@@ -38,6 +69,55 @@ export function clampMotionValue(value: number): number {
 export function clampMotionBpm(value: number): number {
   const bpm = Number.isFinite(value) ? value : DEFAULT_MOTION_BPM;
   return Math.min(MOTION_BPM_MAX, Math.max(MOTION_BPM_MIN, bpm));
+}
+
+export function mapMotionValue(value: number, from: number, to: number): number {
+  const m = clampMotionValue(value);
+  const start = clampMotionValue(from);
+  const end = clampMotionValue(to);
+  if (m <= 0) return start;
+  if (m >= 1) return end;
+  return start + m * (end - start);
+}
+
+export function motionCycleMorph(value: number, inverted: boolean): number {
+  const m = clampMotionValue(value);
+  return inverted ? 1 - m : m;
+}
+
+export function cloneMotionRoutes(routes: MotionRoutes): MotionRoutes {
+  return {
+    cycle: { ...routes.cycle },
+    driveAmount: { ...routes.driveAmount },
+    chorusMix: { ...routes.chorusMix },
+    spaceMix: { ...routes.spaceMix },
+  };
+}
+
+export function hasPlayableMotionRoute(
+  routes: MotionRoutes,
+  cycleAvailable: boolean,
+): boolean {
+  return (
+    (routes.cycle.enabled && cycleAvailable) ||
+    routes.driveAmount.enabled ||
+    routes.chorusMix.enabled ||
+    routes.spaceMix.enabled
+  );
+}
+
+export function createMotionRunSnapshot(
+  path: number[],
+  timing: MotionTiming,
+  routes: MotionRoutes,
+  cycleAvailable: boolean,
+): MotionRunSnapshot {
+  return {
+    path: cloneMotionPath(path),
+    timing: { ...timing },
+    routes: cloneMotionRoutes(routes),
+    cycleAvailable,
+  };
 }
 
 export function beatDurationSeconds(bpm: number): number {
@@ -92,7 +172,7 @@ export function motionFrameAtTime(
     const progress = clampMotionValue(cycle);
     return {
       progress,
-      position: sampleMotionPath(path, progress),
+      value: sampleMotionPath(path, progress),
       complete: elapsed >= duration,
     };
   }
@@ -106,12 +186,7 @@ export function motionFrameAtTime(
       : phase;
   return {
     progress,
-    position: sampleMotionPath(path, progress),
+    value: sampleMotionPath(path, progress),
     complete: false,
   };
-}
-
-/** Swap the meaning of the A/B coordinate system without changing its trajectory. */
-export function complementMotionPath(path: number[]): number[] {
-  return path.map((value) => 1 - clampMotionValue(value));
 }

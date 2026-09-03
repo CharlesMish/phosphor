@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import {
+  DEFAULT_MOTION_ROUTES,
   DEFAULT_MOTION_BEATS,
   DEFAULT_MOTION_BPM,
   DEFAULT_MOTION_MODE,
+  cloneMotionRoutes,
   createDefaultMotionPath,
+  motionFrameAtTime,
+  type MotionRouteId,
 } from "./motion.ts";
 import { generateSpaceContour } from "./space.ts";
 import { generateDrivePreset } from "./drive.ts";
 import { generateChorusPreset } from "./chorus.ts";
 import { useSynthStore } from "./store.ts";
-import { generatePreset } from "./waveform.ts";
+import { synth } from "./engine.ts";
+import { generatePreset, lerpWaves, normalizeWave } from "./waveform.ts";
 
 const initialState = useSynthStore.getInitialState();
 
@@ -26,10 +31,13 @@ function resetStore() {
       motionPath: createDefaultMotionPath(),
       motionPlaying: false,
       motionProgress: 0,
+      motionValue: initialState.motionValue,
       motionRunId: 0,
+      motionRun: null,
       motionBpm: DEFAULT_MOTION_BPM,
       motionBeats: DEFAULT_MOTION_BEATS,
       motionMode: DEFAULT_MOTION_MODE,
+      motionRoutes: cloneMotionRoutes(DEFAULT_MOTION_ROUTES),
       motionPast: [],
       motionFuture: [],
       driveCurve: initialState.driveCurve.slice(),
@@ -69,6 +77,39 @@ function startMotion() {
   return state.motionRunId;
 }
 
+function assertArraysNear(actual: number[], expected: number[], epsilon = 1e-12) {
+  assert.equal(actual.length, expected.length);
+  for (let index = 0; index < actual.length; index++) {
+    assert.ok(
+      Math.abs((actual[index] ?? 0) - (expected[index] ?? 0)) < epsilon,
+      `sample ${index} differs: ${actual[index]} versus ${expected[index]}`,
+    );
+  }
+}
+
+function setOnlyMotionRoute(route: MotionRouteId) {
+  useSynthStore.setState({
+    motionRoutes: {
+      cycle: {
+        ...DEFAULT_MOTION_ROUTES.cycle,
+        enabled: route === "cycle",
+      },
+      driveAmount: {
+        ...DEFAULT_MOTION_ROUTES.driveAmount,
+        enabled: route === "driveAmount",
+      },
+      chorusMix: {
+        ...DEFAULT_MOTION_ROUTES.chorusMix,
+        enabled: route === "chorusMix",
+      },
+      spaceMix: {
+        ...DEFAULT_MOTION_ROUTES.spaceMix,
+        enabled: route === "spaceMix",
+      },
+    },
+  });
+}
+
 describe("MOTION store authority", () => {
   beforeEach(resetStore);
 
@@ -79,7 +120,7 @@ describe("MOTION store authority", () => {
     assert.equal(state.driveAmount, 0.25);
   });
 
-  it("does not start playback without both A and B", () => {
+  it("does not start playback when Cycle is the only route and A/B are unavailable", () => {
     const wave = generatePreset("sine");
     const slotCases = [
       { slotA: null, slotB: null },
@@ -98,7 +139,7 @@ describe("MOTION store authority", () => {
     }
   });
 
-  it("does not audition or change sound without both A and B", () => {
+  it("keeps the source drawable without A/B while leaving unavailable Cycle untouched", () => {
     const wave = generatePreset("sine");
     const slotCases = [
       { slotA: null, slotB: null },
@@ -112,6 +153,7 @@ describe("MOTION store authority", () => {
       useSynthStore.setState({ ...slots, samples, morph: 0.23 });
       useSynthStore.getState().auditionMotion(0.8, true);
       const state = useSynthStore.getState();
+      assert.equal(state.motionValue, 0.8);
       assert.equal(state.morph, 0.23);
       assert.strictEqual(state.samples, samples);
     }
@@ -125,6 +167,7 @@ describe("MOTION store authority", () => {
 
     useSynthStore.getState().playMotion();
     const state = useSynthStore.getState();
+    assert.equal(state.motionValue, path[0]);
     assert.equal(state.morph, path[0]);
     assert.equal(state.motionProgress, 0);
     assert.equal(state.motionPlaying, true);
@@ -141,6 +184,7 @@ describe("MOTION store authority", () => {
       .getState()
       .setMotionPlaybackPosition(path[path.length - 1]!, 1, true, runId);
     const state = useSynthStore.getState();
+    assert.equal(state.motionValue, path[path.length - 1]);
     assert.equal(state.morph, path[path.length - 1]);
     assert.equal(state.motionProgress, 1);
     assert.equal(state.motionPlaying, false);
@@ -346,6 +390,7 @@ describe("MOTION store authority", () => {
 
     useSynthStore.getState().setMotionPlaybackPosition(0.8, 0.7, false, oldRunId);
     const after = useSynthStore.getState();
+    assert.equal(after.motionValue, before.motionValue);
     assert.equal(after.morph, before.morph);
     assert.strictEqual(after.samples, before.samples);
   });
@@ -358,6 +403,7 @@ describe("MOTION store authority", () => {
 
     useSynthStore.getState().setMotionPlaybackPosition(0.8, 0.7, false, runId);
     const after = useSynthStore.getState();
+    assert.equal(after.motionValue, before.motionValue);
     assert.equal(after.morph, before.morph);
     assert.strictEqual(after.samples, before.samples);
   });
@@ -370,7 +416,401 @@ describe("MOTION store authority", () => {
     const state = useSynthStore.getState();
     assert.ok(state.motionRunId > first);
     assert.equal(state.motionProgress, 0);
+    assert.equal(state.motionValue, state.motionPath[0]);
     assert.equal(state.morph, state.motionPath[0]);
+  });
+});
+
+describe("MOTION routing v1", () => {
+  beforeEach(resetStore);
+
+  it("keeps Cycle-only routing equivalent to the established morph output", () => {
+    const { slotA, slotB } = armMorph();
+    const value = 0.37;
+    const expected = normalizeWave(lerpWaves(slotA, slotB, value), 0.92);
+
+    useSynthStore.getState().auditionMotion(value, true);
+    const state = useSynthStore.getState();
+    assert.equal(state.motionValue, value);
+    assert.equal(state.morph, value);
+    assert.deepEqual(state.samples, expected);
+    assert.deepEqual(state.motionRoutes, DEFAULT_MOTION_ROUTES);
+  });
+
+  it("plays without A/B when any numeric destination is enabled", () => {
+    for (const route of ["driveAmount", "chorusMix", "spaceMix"] as const) {
+      resetStore();
+      setOnlyMotionRoute(route);
+      const runId = startMotion();
+      const state = useSynthStore.getState();
+      assert.equal(state.motionRunId, runId);
+      assert.equal(state.motionRun?.cycleAvailable, false);
+      assert.equal(state.motionRun?.routes[route].enabled, true);
+    }
+  });
+
+  it("does not play when every destination is unavailable or disabled", () => {
+    useSynthStore.setState({
+      motionRoutes: {
+        cycle: { enabled: false, inverted: false },
+        driveAmount: { enabled: false, from: 0, to: 0.25 },
+        chorusMix: { enabled: false, from: 0, to: 0.35 },
+        spaceMix: { enabled: false, from: 0.38, to: 0.7 },
+      },
+    });
+    const before = useSynthStore.getState().motionRunId;
+    useSynthStore.getState().playMotion();
+    assert.equal(useSynthStore.getState().motionPlaying, false);
+    assert.equal(useSynthStore.getState().motionRunId, before);
+  });
+
+  it("maps all numeric destinations exactly at source 0, 0.5, and 1", () => {
+    useSynthStore.getState().setDriveSafe(false);
+    useSynthStore.setState({
+      motionRoutes: {
+        cycle: { enabled: false, inverted: false },
+        driveAmount: { enabled: true, from: 0.1, to: 0.7 },
+        chorusMix: { enabled: true, from: 0.2, to: 0.8 },
+        spaceMix: { enabled: true, from: 0.3, to: 0.9 },
+      },
+    });
+
+    for (const [source, expected] of [
+      [0, [0.1, 0.2, 0.3]],
+      [0.5, [0.4, 0.5, 0.6]],
+      [1, [0.7, 0.8, 0.9]],
+    ] as const) {
+      useSynthStore.getState().auditionMotion(source, true);
+      const state = useSynthStore.getState();
+      assert.equal(state.motionValue, source);
+      assert.ok(Math.abs(state.driveAmount - expected[0]) < 1e-12);
+      assert.ok(Math.abs(state.chorusMix - expected[1]) < 1e-12);
+      assert.ok(Math.abs(state.spaceMix - expected[2]) < 1e-12);
+    }
+  });
+
+  it("applies descending endpoint mappings", () => {
+    useSynthStore.getState().setDriveSafe(false);
+    useSynthStore.setState({
+      motionRoutes: {
+        ...cloneMotionRoutes(DEFAULT_MOTION_ROUTES),
+        cycle: { enabled: false, inverted: false },
+        driveAmount: { enabled: true, from: 0.7, to: 0.1 },
+      },
+    });
+
+    useSynthStore.getState().auditionMotion(0.25);
+    assert.ok(Math.abs(useSynthStore.getState().driveAmount - 0.55) < 1e-12);
+  });
+
+  it("keeps Motion-routed DRIVE Amount inside the SAFE ceiling", () => {
+    const authored = useSynthStore.getState().driveCurve;
+    const past = useSynthStore.getState().drivePast;
+    const future = useSynthStore.getState().driveFuture;
+    useSynthStore.setState({
+      motionRoutes: {
+        ...cloneMotionRoutes(DEFAULT_MOTION_ROUTES),
+        cycle: { enabled: false, inverted: false },
+        driveAmount: { enabled: true, from: 0, to: 1 },
+      },
+    });
+
+    useSynthStore.getState().auditionMotion(1);
+    assert.equal(useSynthStore.getState().driveAmount, 0.25);
+    useSynthStore.getState().setDriveSafe(false);
+    useSynthStore.getState().auditionMotion(1);
+    const state = useSynthStore.getState();
+    assert.equal(state.driveAmount, 1);
+    assert.strictEqual(state.driveCurve, authored);
+    assert.strictEqual(state.drivePast, past);
+    assert.strictEqual(state.driveFuture, future);
+  });
+
+  it("routes CHORUS Mix without changing its Period or authored curve", () => {
+    setOnlyMotionRoute("chorusMix");
+    const before = useSynthStore.getState();
+    const curve = before.chorusCurve;
+    const past = before.chorusPast;
+    const future = before.chorusFuture;
+
+    before.auditionMotion(0.5);
+    const after = useSynthStore.getState();
+    assert.equal(after.chorusMix, 0.175);
+    assert.equal(after.chorusPeriod, before.chorusPeriod);
+    assert.strictEqual(after.chorusCurve, curve);
+    assert.strictEqual(after.chorusPast, past);
+    assert.strictEqual(after.chorusFuture, future);
+  });
+
+  it("routes SPACE Mix without changing or rebuilding its impulse response", () => {
+    setOnlyMotionRoute("spaceMix");
+    const before = useSynthStore.getState();
+    const contour = before.spaceContour;
+    const view = before.spaceView;
+    const seed = before.spaceSeed;
+    const seconds = before.spaceSeconds;
+    const past = before.spacePast;
+    const future = before.spaceFuture;
+    const hasDrawn = before.spaceHasDrawn;
+    const originalSetSpace = synth.setSpace;
+    let rebuilds = 0;
+    synth.setSpace = () => {
+      rebuilds += 1;
+    };
+
+    try {
+      before.auditionMotion(0.5);
+    } finally {
+      synth.setSpace = originalSetSpace;
+    }
+
+    const after = useSynthStore.getState();
+    assert.equal(after.spaceMix, 0.54);
+    assert.equal(rebuilds, 0);
+    assert.strictEqual(after.spaceContour, contour);
+    assert.strictEqual(after.spaceView, view);
+    assert.equal(after.spaceSeed, seed);
+    assert.equal(after.spaceSeconds, seconds);
+    assert.equal(after.spaceHasDrawn, hasDrawn);
+    assert.strictEqual(after.spacePast, past);
+    assert.strictEqual(after.spaceFuture, future);
+  });
+
+  it("leaves every unrouted destination untouched", () => {
+    setOnlyMotionRoute("chorusMix");
+    useSynthStore.setState({ driveAmount: 0.12, spaceMix: 0.44 });
+    useSynthStore.getState().auditionMotion(0.8);
+    const state = useSynthStore.getState();
+    assert.equal(state.driveAmount, 0.12);
+    assert.equal(state.spaceMix, 0.44);
+  });
+
+  it("batches one source frame across every enabled destination", () => {
+    useSynthStore.getState().setDriveSafe(false);
+    useSynthStore.setState({
+      motionRoutes: {
+        cycle: { enabled: false, inverted: false },
+        driveAmount: { enabled: true, from: 0, to: 0.4 },
+        chorusMix: { enabled: true, from: 0.1, to: 0.5 },
+        spaceMix: { enabled: true, from: 0.2, to: 0.8 },
+      },
+    });
+    let storeFrames = 0;
+    const unsubscribe = useSynthStore.subscribe(() => {
+      storeFrames += 1;
+    });
+    useSynthStore.getState().auditionMotion(0.5);
+    unsubscribe();
+
+    const state = useSynthStore.getState();
+    assert.equal(storeFrames, 1);
+    assert.equal(state.motionValue, 0.5);
+    assert.equal(state.driveAmount, 0.2);
+    assert.ok(Math.abs(state.chorusMix - 0.3) < 1e-12);
+    assert.equal(state.spaceMix, 0.5);
+  });
+
+  it("uses snapshotted path, timing, and routes for the whole run", () => {
+    useSynthStore.getState().setDriveSafe(false);
+    const path = createDefaultMotionPath();
+    path[0] = 0.2;
+    useSynthStore.setState({
+      motionPath: path,
+      motionBpm: 90,
+      motionBeats: 8,
+      motionMode: "loop",
+      motionRoutes: {
+        ...cloneMotionRoutes(DEFAULT_MOTION_ROUTES),
+        cycle: { enabled: false, inverted: false },
+        driveAmount: { enabled: true, from: 0.1, to: 0.5 },
+      },
+    });
+    const runId = startMotion();
+    const run = useSynthStore.getState().motionRun;
+    assert.ok(run);
+
+    path[0] = 1;
+    useSynthStore.setState({
+      motionPath: [1, 1],
+      motionBpm: 240,
+      motionBeats: 1,
+      motionMode: "one-shot",
+      motionRoutes: {
+        ...cloneMotionRoutes(DEFAULT_MOTION_ROUTES),
+        cycle: { enabled: false, inverted: false },
+        driveAmount: { enabled: true, from: 0.8, to: 1 },
+      },
+    });
+    useSynthStore.getState().setMotionPlaybackPosition(0.5, 0.5, false, runId);
+
+    const state = useSynthStore.getState();
+    assert.deepEqual(run.path[0], 0.2);
+    assert.deepEqual(run.timing, { bpm: 90, beats: 8, mode: "loop" });
+    assert.deepEqual(run.routes.driveAmount, {
+      enabled: true,
+      from: 0.1,
+      to: 0.5,
+    });
+    assert.ok(Math.abs(state.driveAmount - 0.3) < 1e-12);
+  });
+
+  it("rejects stale runIds before they can change routed values", () => {
+    setOnlyMotionRoute("chorusMix");
+    const staleRunId = startMotion();
+    useSynthStore.getState().playMotion();
+    const before = useSynthStore.getState();
+    assert.notEqual(before.motionRunId, staleRunId);
+
+    useSynthStore
+      .getState()
+      .setMotionPlaybackPosition(1, 0.8, false, staleRunId);
+    const after = useSynthStore.getState();
+    assert.equal(after.motionValue, before.motionValue);
+    assert.equal(after.chorusMix, before.chorusMix);
+  });
+
+  it("retrigger immediately reapplies numeric routes at the path start", () => {
+    useSynthStore.getState().setDriveSafe(false);
+    setOnlyMotionRoute("driveAmount");
+    const path = createDefaultMotionPath();
+    path[0] = 0.4;
+    useSynthStore.setState({ motionPath: path });
+    const firstRunId = startMotion();
+    useSynthStore
+      .getState()
+      .setMotionPlaybackPosition(0.9, 0.7, false, firstRunId);
+
+    useSynthStore.getState().playMotion();
+    const state = useSynthStore.getState();
+    assert.ok(state.motionRunId > firstRunId);
+    assert.equal(state.motionProgress, 0);
+    assert.equal(state.motionValue, 0.4);
+    assert.equal(state.driveAmount, 0.1);
+  });
+
+  it("Stop freezes the current source and routed state", () => {
+    setOnlyMotionRoute("spaceMix");
+    const runId = startMotion();
+    useSynthStore.getState().setMotionPlaybackPosition(0.4, 0.3, false, runId);
+    useSynthStore.getState().stopMotion();
+    const frozen = useSynthStore.getState();
+
+    useSynthStore.getState().setMotionPlaybackPosition(1, 0.9, false, runId);
+    const after = useSynthStore.getState();
+    assert.equal(after.motionValue, frozen.motionValue);
+    assert.equal(after.motionProgress, frozen.motionProgress);
+    assert.equal(after.spaceMix, frozen.spaceMix);
+  });
+
+  it("One-shot completion holds the final source and routed state", () => {
+    setOnlyMotionRoute("chorusMix");
+    const runId = startMotion();
+    useSynthStore.getState().setMotionPlaybackPosition(1, 1, true, runId);
+    const state = useSynthStore.getState();
+    assert.equal(state.motionPlaying, false);
+    assert.equal(state.motionValue, 1);
+    assert.equal(state.motionProgress, 1);
+    assert.equal(state.chorusMix, 0.35);
+  });
+
+  it("applies each Loop and Ping-pong frame to all routes from one source", () => {
+    for (const mode of ["loop", "ping-pong"] as const) {
+      resetStore();
+      armMorph();
+      useSynthStore.getState().setDriveSafe(false);
+      useSynthStore.setState({
+        motionMode: mode,
+        motionRoutes: {
+          cycle: { enabled: true, inverted: false },
+          driveAmount: { enabled: true, from: 0, to: 0.4 },
+          chorusMix: { enabled: true, from: 0.1, to: 0.5 },
+          spaceMix: { enabled: true, from: 0.2, to: 0.8 },
+        },
+      });
+      const runId = startMotion();
+      const run = useSynthStore.getState().motionRun;
+      assert.ok(run);
+      const frame = motionFrameAtTime(run.path, 0.5, run.timing);
+      useSynthStore
+        .getState()
+        .setMotionPlaybackPosition(frame.value, frame.progress, false, runId);
+      const state = useSynthStore.getState();
+      assert.equal(state.motionValue, frame.value);
+      assert.equal(state.morph, frame.value);
+      assert.ok(Math.abs(state.driveAmount - frame.value * 0.4) < 1e-12);
+      assert.ok(Math.abs(state.chorusMix - (0.1 + frame.value * 0.4)) < 1e-12);
+      assert.ok(Math.abs(state.spaceMix - (0.2 + frame.value * 0.6)) < 1e-12);
+    }
+  });
+
+  it("manual edits to an actively routed numeric destination take authority", () => {
+    const cases = [
+      ["driveAmount", () => useSynthStore.getState().setDriveAmount(0.12), "driveAmount", 0.12],
+      ["chorusMix", () => useSynthStore.getState().setChorusMix(0.44), "chorusMix", 0.44],
+      ["spaceMix", () => useSynthStore.getState().setSpaceMix(0.62), "spaceMix", 0.62],
+    ] as const;
+
+    for (const [route, edit, key, expected] of cases) {
+      resetStore();
+      setOnlyMotionRoute(route);
+      startMotion();
+      edit();
+      const state = useSynthStore.getState();
+      assert.equal(state.motionPlaying, false);
+      assert.equal(state[key], expected);
+    }
+  });
+
+  it("manual edits to unrouted destinations leave Motion running", () => {
+    setOnlyMotionRoute("driveAmount");
+    startMotion();
+    useSynthStore.getState().setChorusMix(0.4);
+    useSynthStore.getState().setSpaceMix(0.6);
+    useSynthStore.getState().setLiveContour(generateSpaceContour("long"));
+    assert.equal(useSynthStore.getState().motionPlaying, true);
+  });
+
+  it("manual Cycle edits leave an effects-only Motion run active", () => {
+    armMorph();
+    setOnlyMotionRoute("driveAmount");
+    startMotion();
+    useSynthStore.getState().setMorph(0.6);
+    assert.equal(useSynthStore.getState().motionPlaying, true);
+    useSynthStore.getState().setLiveSamples(generatePreset("triangle"));
+    assert.equal(useSynthStore.getState().motionPlaying, true);
+  });
+
+  it("does not add path history for route or timing configuration", () => {
+    const past = [[0.2, 0.8]];
+    const future = [[0.4, 0.6]];
+    useSynthStore.setState({ motionPast: past, motionFuture: future });
+    const state = useSynthStore.getState();
+    state.setMotionRouteEnabled("driveAmount", true);
+    useSynthStore.getState().setMotionRouteEndpoint("driveAmount", "from", 0.7);
+    useSynthStore.getState().setMotionRouteEndpoint("driveAmount", "to", 0.1);
+    useSynthStore.getState().setMotionBpm(96);
+    useSynthStore.getState().setMotionBeats(8);
+    useSynthStore.getState().setMotionMode("ping-pong");
+
+    const after = useSynthStore.getState();
+    assert.strictEqual(after.motionPast, past);
+    assert.strictEqual(after.motionFuture, future);
+  });
+
+  it("locks timing and route configuration to the current run snapshot", () => {
+    setOnlyMotionRoute("driveAmount");
+    startMotion();
+    const before = useSynthStore.getState();
+    before.setMotionRouteEnabled("chorusMix", true);
+    useSynthStore.getState().setMotionRouteEndpoint("driveAmount", "to", 0.9);
+    useSynthStore.getState().setMotionBpm(200);
+    useSynthStore.getState().setMotionBeats(1);
+    useSynthStore.getState().setMotionMode("loop");
+    const after = useSynthStore.getState();
+    assert.strictEqual(after.motionRoutes, before.motionRoutes);
+    assert.equal(after.motionBpm, before.motionBpm);
+    assert.equal(after.motionBeats, before.motionBeats);
+    assert.equal(after.motionMode, before.motionMode);
   });
 });
 
@@ -588,47 +1028,81 @@ describe("CHORUS store history", () => {
   });
 });
 
-describe("MOTION store history and A/B coordinates", () => {
+describe("MOTION store history and A/B Swap", () => {
   beforeEach(resetStore);
 
-  it("transforms slots, morph, path, and histories on Swap without changing sound", () => {
-    const slotA = [0, 0.25, 0.5];
-    const slotB = [1, 0.75, 0.5];
-    const soundingSamples = [0.2, -0.1, 0.4];
-    const motionPath = [0, 0.25, 1];
+  it("preserves Cycle sound by inverting only the Cycle route interpretation", () => {
+    const slotA = generatePreset("sine");
+    const slotB = generatePreset("square");
+    const motionPath = [0.3, 0.25, 1];
     const motionPast = [[0.1, 0.4, 0.8]];
     const motionFuture = [[0.2, 0.6, 0.9]];
     useSynthStore.setState({
       slotA,
       slotB,
-      samples: soundingSamples,
-      morph: 0.3,
       motionPath,
       motionPast,
       motionFuture,
-      motionPlaying: true,
+      motionRoutes: {
+        cycle: { enabled: true, inverted: false },
+        driveAmount: { enabled: true, from: 0, to: 0.25 },
+        chorusMix: { enabled: true, from: 0, to: 0.35 },
+        spaceMix: { enabled: true, from: 0.38, to: 0.7 },
+      },
     });
+    startMotion();
+    const before = useSynthStore.getState();
+    const soundingSamples = before.samples;
+    const driveOutput = before.driveAmount;
+    const chorusOutput = before.chorusMix;
+    const spaceOutput = before.spaceMix;
+    const driveRoute = before.motionRoutes.driveAmount;
+    const chorusRoute = before.motionRoutes.chorusMix;
+    const spaceRoute = before.motionRoutes.spaceMix;
 
     useSynthStore.getState().swapSlots();
-    const state = useSynthStore.getState();
+    let state = useSynthStore.getState();
     assert.deepEqual(state.slotA, slotB);
     assert.deepEqual(state.slotB, slotA);
     assert.notStrictEqual(state.slotA, slotB);
     assert.notStrictEqual(state.slotB, slotA);
     assert.equal(state.morph, 0.7);
-    assert.deepEqual(state.motionPath, [1, 0.75, 0]);
-    assert.deepEqual(
-      state.motionPast,
-      motionPast.map((path) => path.map((value) => 1 - value)),
-    );
-    assert.deepEqual(
-      state.motionFuture,
-      motionFuture.map((path) => path.map((value) => 1 - value)),
-    );
-    assert.equal(state.motionPast.length, motionPast.length);
-    assert.equal(state.motionFuture.length, motionFuture.length);
+    assert.equal(state.motionRoutes.cycle.inverted, true);
+    assert.strictEqual(state.motionPath, motionPath);
+    assert.strictEqual(state.motionPast, motionPast);
+    assert.strictEqual(state.motionFuture, motionFuture);
+    assert.strictEqual(state.motionRoutes.driveAmount, driveRoute);
+    assert.strictEqual(state.motionRoutes.chorusMix, chorusRoute);
+    assert.strictEqual(state.motionRoutes.spaceMix, spaceRoute);
     assert.strictEqual(state.samples, soundingSamples);
     assert.equal(state.motionPlaying, false);
+
+    state.auditionMotion(0.3, true);
+    state = useSynthStore.getState();
+    assert.equal(state.motionValue, 0.3);
+    assert.equal(state.morph, 0.7);
+    assertArraysNear(state.samples, soundingSamples);
+    assert.equal(state.driveAmount, driveOutput);
+    assert.equal(state.chorusMix, chorusOutput);
+    assert.equal(state.spaceMix, spaceOutput);
+  });
+
+  it("does not stop or reverse non-Cycle routing during an A/B Swap", () => {
+    const { slotA, slotB } = armMorph();
+    setOnlyMotionRoute("spaceMix");
+    const runId = startMotion();
+    useSynthStore.getState().setMotionPlaybackPosition(0.6, 0.4, false, runId);
+    const before = useSynthStore.getState();
+
+    before.swapSlots();
+    const after = useSynthStore.getState();
+    assert.deepEqual(after.slotA, slotB);
+    assert.deepEqual(after.slotB, slotA);
+    assert.equal(after.motionPlaying, true);
+    assert.equal(after.motionRunId, runId);
+    assert.equal(after.motionValue, before.motionValue);
+    assert.equal(after.spaceMix, before.spaceMix);
+    assert.deepEqual(after.motionRun?.routes.spaceMix, before.motionRun?.routes.spaceMix);
   });
 
   it("keeps MOTION history snapshots independent from live path arrays", () => {

@@ -3,10 +3,10 @@ import { cn } from "@/lib/utils";
 
 const EDITORS: Array<{ domain: EditorDomain; label: string }> = [
   { domain: "cycle", label: "Cycle" },
+  { domain: "space", label: "Space" },
   { domain: "motion", label: "Motion" },
   { domain: "drive", label: "Drive" },
   { domain: "chorus", label: "Chorus" },
-  { domain: "space", label: "Space" },
 ];
 
 export function EditorTabs() {
