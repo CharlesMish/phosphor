@@ -39,6 +39,7 @@ import {
   CHORUS_PRESET_LABEL,
   CHORUS_PRESET_ORDER,
   type ChorusPreset,
+  generateChorusPreset,
 } from "@/lib/synth/chorus";
 import { rangeLabel } from "@/lib/synth/keyboard-map";
 import {
@@ -127,6 +128,18 @@ function MiniTransfer({ kind, active }: { kind: DrivePreset; active: boolean }) 
   );
 }
 
+function MiniChorus({ kind, active }: { kind: ChorusPreset; active: boolean }) {
+  const points = generateChorusPreset(kind);
+  const d = points.filter((_, i) => i % 4 === 0).map((v, i, all) =>
+    `${i === 0 ? "M" : "L"}${(i / (all.length - 1) * 44).toFixed(1)} ${(8 - v * 6.5).toFixed(1)}`,
+  ).join(" ");
+  return (
+    <svg width="44" height="16" viewBox="0 0 44 16" aria-hidden>
+      <path d={d} fill="none" stroke="currentColor" strokeWidth={active ? 1.6 : 1.2} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Param({
   label,
   value,
@@ -146,7 +159,7 @@ function Param({
 }) {
   return (
     <label className="block">
-      <span className="mb-0.5 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
+      <span className="mb-0.5 flex flex-wrap items-center justify-between gap-x-2 font-mono text-xs uppercase tracking-wider text-faint">
         <span>{label}</span>
         <span className="tabular-nums text-muted">{display}</span>
       </span>
@@ -279,7 +292,7 @@ export function PresetBar() {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+          <label className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-faint">
             <span>BPM</span>
             <input
               type="number"
@@ -296,7 +309,7 @@ export function PresetBar() {
               aria-label="Motion BPM"
             />
           </label>
-          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+          <label className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-faint">
             <span>Length</span>
             <select
               value={motionBeats}
@@ -314,7 +327,7 @@ export function PresetBar() {
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-faint">
+          <label className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-faint">
             <span>Mode</span>
             <select
               value={motionMode}
@@ -380,7 +393,7 @@ export function PresetBar() {
 
   if (domain === "drive") {
     return (
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex flex-wrap gap-1.5">
           {DRIVE_PRESET_ORDER.map((kind) => {
             const on = drivePreset === kind;
@@ -389,12 +402,12 @@ export function PresetBar() {
                 key={kind}
                 variant={on ? "solid" : "outline"}
                 size="sm"
-                className={cn("h-10 min-w-16 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
+                className={cn("h-11 min-w-16 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
                 onClick={() => applyDrivePreset(kind)}
                 aria-pressed={on}
               >
                 <MiniTransfer kind={kind} active={on} />
-                <span className="font-mono text-[10px] uppercase tracking-wider">
+                <span className="font-mono text-xs uppercase tracking-wider">
                   {DRIVE_PRESET_LABEL[kind]}
                 </span>
               </Button>
@@ -422,7 +435,7 @@ export function PresetBar() {
 
   if (domain === "chorus") {
     return (
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex flex-wrap gap-1.5">
           {CHORUS_PRESET_ORDER.map((kind: ChorusPreset) => {
             const on = chorusPreset === kind;
@@ -432,15 +445,13 @@ export function PresetBar() {
                 variant={on ? "solid" : "outline"}
                 size="sm"
                 className={cn(
-                  "h-10 min-w-14 px-2 font-mono text-[10px] uppercase tracking-wider",
+                  "h-11 min-w-16 flex-col gap-0 px-2 py-1 font-mono text-xs uppercase tracking-wider",
                   on && "text-active-ink",
                 )}
                 onClick={() => applyChorusPreset(kind)}
                 aria-pressed={on}
               >
-                <span className="mr-1 text-base leading-none">
-                  {kind === "sine" ? "∿" : kind === "triangle" ? "⌁" : kind === "rise" ? "↗" : "⌇"}
-                </span>
+                <MiniChorus kind={kind} active={on} />
                 {CHORUS_PRESET_LABEL[kind]}
               </Button>
             );
@@ -467,7 +478,7 @@ export function PresetBar() {
 
   if (domain === "space") {
     return (
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex flex-wrap gap-1.5">
           {SPACE_PRESET_ORDER.map((kind) => {
             const on = spacePreset === kind;
@@ -476,12 +487,12 @@ export function PresetBar() {
                 key={kind}
                 variant={on ? "solid" : "outline"}
                 size="sm"
-                className={cn("h-10 min-w-14 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
+                className={cn("h-11 min-w-14 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
                 onClick={() => applySpacePreset(kind)}
                 aria-pressed={on}
               >
                 <MiniContour kind={kind} active={on} />
-                <span className="font-mono text-[10px] uppercase tracking-wider">
+                <span className="font-mono text-xs uppercase tracking-wider">
                   {SPACE_PRESET_LABEL[kind]}
                 </span>
               </Button>
@@ -508,7 +519,7 @@ export function PresetBar() {
   }
 
   return (
-    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div className="flex flex-wrap gap-1.5">
         {PRESET_ORDER.map((kind) => {
           const on = preset === kind;
@@ -517,12 +528,12 @@ export function PresetBar() {
               key={kind}
               variant={on ? "solid" : "outline"}
               size="sm"
-              className={cn("h-10 min-w-14 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
+              className={cn("h-11 min-w-14 flex-col gap-0 px-2 py-1", on && "text-active-ink")}
               onClick={() => applyPreset(kind)}
               aria-pressed={on}
             >
               <MiniWave kind={kind} active={on} />
-              <span className="font-mono text-[10px] uppercase tracking-wider">
+              <span className="font-mono text-xs uppercase tracking-wider">
                 {PRESET_LABEL[kind]}
               </span>
             </Button>
@@ -550,82 +561,50 @@ export function PresetBar() {
 
 export function HeaderBar() {
   const domain = useSynthStore((s) => s.domain);
-  const octave = useSynthStore((s) => s.octave);
-  const setOctave = useSynthStore((s) => s.setOctave);
-  const volume = useSynthStore((s) => s.volume);
-  const setParam = useSynthStore((s) => s.setParam);
   const audioReady = useSynthStore((s) => s.audioReady);
   const active = useSynthStore((s) => s.activeNotes.length);
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex items-baseline gap-3">
-          <h1 className="phosphor-wordmark text-xl text-fg">Phosphor</h1>
-          <p className="hidden font-mono text-[11px] uppercase tracking-[0.2em] text-faint sm:block">
-            {domain === "space"
-              ? "Draw the space"
-              : domain === "motion"
-                ? "Draw the motion"
-                : domain === "drive"
-                  ? "Draw the drive"
-                  : domain === "chorus"
-                    ? "Draw the chorus"
-                    : "Draw the cycle"}
-          </p>
-        </div>
+    <header className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h1 className="phosphor-wordmark text-xl text-fg">Phosphor</h1>
+        <p className="font-mono text-xs uppercase tracking-wider text-muted">
+          Draw the {domain === "motion" ? "motion" : domain === "drive" ? "drive" : domain === "chorus" ? "chorus" : domain === "space" ? "space" : "cycle"}
+        </p>
+      </div>
+      <div className="flex max-w-full flex-wrap items-center gap-3">
+        <span className="flex items-center gap-2 font-mono text-xs text-muted" title={audioReady ? "Audio ready" : "Play a key to start audio"}>
+          <span aria-hidden className={cn("size-1.5 rounded-full", audioReady ? "bg-status" : "bg-faint")} />
+          {audioReady ? (active > 0 ? "Live" : "Ready") : "Standby"}
+        </span>
         <TreatmentSelector />
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              "size-2 rounded-full",
-              audioReady ? "bg-status" : "bg-faint",
-            )}
-            title={audioReady ? "Audio armed" : "Tap a key to arm audio"}
-          />
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
-            {audioReady ? (active > 0 ? "live" : "armed") : "standby"}
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="subtle"
-            size="icon"
-            className="size-9"
-            aria-label="Octave down"
-            onClick={() => setOctave(octave - 1)}
-            disabled={octave <= -2}
-          >
-            <Minus className="size-4" />
-          </Button>
-          <div className="min-w-20 text-center font-mono text-xs tabular-nums text-muted">
-            {rangeLabel(octave)}
-          </div>
-          <Button
-            variant="subtle"
-            size="icon"
-            className="size-9"
-            aria-label="Octave up"
-            onClick={() => setOctave(octave + 1)}
-            disabled={octave >= 3}
-          >
-            <Plus className="size-4" />
-          </Button>
-        </div>
-        <label className="flex w-36 items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-faint">Vol</span>
-          <Slider
-            min={0}
-            max={1}
-            step={0.01}
-            value={[volume]}
-            onValueChange={(v) => setParam("volume", v[0] ?? volume)}
-            aria-label="Master volume"
-          />
-        </label>
-      </div>
     </header>
+  );
+}
+
+export function KeyboardControls() {
+  const octave = useSynthStore((s) => s.octave);
+  const setOctave = useSynthStore((s) => s.setOctave);
+  const volume = useSynthStore((s) => s.volume);
+  const setParam = useSynthStore((s) => s.setParam);
+
+  return (
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+      <div className="flex items-center gap-1">
+        <Button variant="subtle" size="icon" className="size-9" aria-label="Octave down" onClick={() => setOctave(octave - 1)} disabled={octave <= -2}>
+          <Minus className="size-4" aria-hidden />
+        </Button>
+        <span className="min-w-20 text-center font-mono text-xs tabular-nums text-muted" aria-live="polite">{rangeLabel(octave)}</span>
+        <Button variant="subtle" size="icon" className="size-9" aria-label="Octave up" onClick={() => setOctave(octave + 1)} disabled={octave >= 3}>
+          <Plus className="size-4" aria-hidden />
+        </Button>
+      </div>
+      <p className="hidden font-mono text-xs text-muted md:block">Play the keys · Esc stops sound</p>
+      <label className="flex w-44 max-w-full items-center gap-2">
+        <span className="font-mono text-xs text-muted">Volume</span>
+        <Slider min={0} max={1} step={0.01} value={[volume]} onValueChange={(v) => setParam("volume", v[0] ?? volume)} aria-label="Master volume" aria-valuetext={`${Math.round(volume * 100)}%`} />
+      </label>
+    </div>
   );
 }

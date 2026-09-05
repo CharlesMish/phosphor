@@ -15,7 +15,7 @@ Phosphor is a browser instrument built around directly manipulating DSP structur
 ## Run locally
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -51,3 +51,26 @@ The Vite base path is `/phosphor/`, matching the repository Pages URL.
 ## Development rule
 
 Treat `main` as the playable baseline. New musical or rendering experiments should happen on branches and merge back only after review.
+
+### Treatment validation note
+
+Registration Ink inherits its palette from Figurestead. A user-reported bug in the upstream validation harness leaves the full Figurestead claims for this treatment pending revalidation. Its presence here is a visual option, not a certification of those claims. Keep this note in the developer documentation and revisit it when corrected upstream evidence is available; the cleanup pass does not redesign the palette.
+
+### Panel cleanup baseline
+
+The drawing area, preset/edit toolbar, and per-editor settings form one panel.
+Output, envelope/filter controls, and an always-visible effects summary form the
+adjacent rack. Octave and master volume live with the piano. Editor headers and
+captions sit outside the canvas; compact viewports use natural scrolling.
+
+The effects summary opens editors without toggling effects. Drive shows Identity
+for the identity curve, otherwise its applied amount (including the Safe cap).
+Chorus and Space show mix or Bypass at zero. Keyboard keys are native buttons:
+hold Enter or Space on a focused key to play it; focus/window loss releases it.
+The existing QWERTY mappings and audio engine remain in place.
+
+Cleanup validation: the 75 existing tests, typecheck, and production build pass.
+A separate DOM regression probe exercised focused piano key press/release, key
+repeat, focus/window loss, and effect summaries/navigation. This is not a claim
+of browser visual validation; compact/tablet rendering, 200% zoom, and treatment
+switching still need a browser review before merging this baseline.
