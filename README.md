@@ -74,3 +74,34 @@ A separate DOM regression probe exercised focused piano key press/release, key
 repeat, focus/window loss, and effect summaries/navigation. This is not a claim
 of browser visual validation; compact/tablet rendering, 200% zoom, and treatment
 switching still need a browser review before merging this baseline.
+
+## Panel design study
+
+The `study/panel-design-lanes` branch compares three playable panel layouts:
+
+- **Bench** joins drawing and editing into one framed instrument with a quiet right-hand rack.
+- **Signal Desk** uses a full-width plot above a horizontal output/settings band.
+- **Control Cabinet** uses square compartments with a left-hand control rack.
+
+The layout selector and the Figurestead treatment selector are independent.
+Each lane uses the same mounted instrument and audio state; switching layouts
+preserves drawings, A/B captures, settings, and undo history. Compact screens
+retain natural page scrolling. The Registration Ink validation caveat above
+continues to apply.
+
+Build a single downloadable comparison file with embedded application code,
+styles, fonts, and favicon:
+
+```bash
+npm run build
+node scripts/export-standalone.mjs
+```
+
+Open `dist/phosphor-panel-lanes.html` directly in a browser. The export command
+fetches the existing Google Fonts assets once; the exported instrument itself
+needs no network. This branch is a design study, not a replacement of the
+playable main baseline.
+
+Typecheck/build and a DOM regression probe for layout/state preservation passed.
+The DOM probe checks node identity, synth data/history, no panic on lane change,
+and independent treatment selection; it does not validate browser geometry.

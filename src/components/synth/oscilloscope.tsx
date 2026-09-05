@@ -119,7 +119,7 @@ export function Oscilloscope() {
   }, [treatment]);
 
   return (
-    <div className="relative overflow-hidden rounded-lg bg-plot shadow-border">
+    <div className="phosphor-scope relative overflow-hidden rounded-lg bg-plot shadow-border">
       <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex justify-between font-mono text-xs uppercase tracking-[0.08em] text-muted">
         <span>Output</span>
         <span className="tabular-nums">{active} voice{active === 1 ? "" : "s"}</span>

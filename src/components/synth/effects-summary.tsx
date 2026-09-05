@@ -26,7 +26,7 @@ export function EffectsSummary() {
   return (
     <section className="phosphor-effects rounded-lg bg-surface p-3 shadow-border" aria-label="Effect settings">
       <h2 className="mb-2 font-mono text-xs uppercase tracking-wider text-muted">Effects</h2>
-      <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+      <div className="phosphor-effects-list grid grid-cols-3 gap-2 lg:grid-cols-1">
         {rows.map((row) => (
           <button
             key={row.domain}

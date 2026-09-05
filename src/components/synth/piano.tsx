@@ -145,7 +145,7 @@ export function Piano() {
 
   return (
     <div
-      className="relative isolate h-28 w-full cursor-pointer touch-none select-none sm:h-32 md:h-36"
+      className="phosphor-piano relative isolate h-28 w-full cursor-pointer touch-none select-none sm:h-32 md:h-36"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
