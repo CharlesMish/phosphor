@@ -47,6 +47,7 @@ export function Piano() {
   }
 
   const heldByPointer = useRef(new Map<number, number>());
+  const heldByKey = useRef(new Map<string, number>());
   const activeSet = new Set(active);
 
   const play = useCallback((midi: number) => {
@@ -69,13 +70,48 @@ export function Piano() {
 
   useEffect(() => {
     const end = (e: PointerEvent) => releasePointer(e.pointerId);
+    const releaseAll = () => {
+      for (const midi of heldByPointer.current.values()) stop(midi);
+      for (const midi of heldByKey.current.values()) stop(midi);
+      heldByPointer.current.clear();
+      heldByKey.current.clear();
+    };
+    const onVisibility = () => { if (document.hidden) releaseAll(); };
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
+    window.addEventListener("blur", releaseAll);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", releaseAll);
+      document.removeEventListener("visibilitychange", onVisibility);
+      releaseAll();
     };
-  }, [releasePointer]);
+  }, [releasePointer, stop]);
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.code !== "Enter" && e.code !== "Space") return;
+    const midi = midiFromTarget(e.target);
+    if (midi === null) return;
+    e.preventDefault();
+    if (e.repeat || heldByKey.current.has(e.code)) return;
+    heldByKey.current.set(e.code, midi);
+    play(midi);
+  };
+
+  const onKeyUp = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const midi = heldByKey.current.get(e.code);
+    if (midi === undefined) return;
+    e.preventDefault();
+    heldByKey.current.delete(e.code);
+    stop(midi);
+  };
+
+  const onBlur = () => {
+    for (const midi of heldByKey.current.values()) stop(midi);
+    heldByKey.current.clear();
+  };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const midi = midiFromTarget(e.target) ?? midiFromPoint(e.clientX, e.clientY);
@@ -115,6 +151,9 @@ export function Piano() {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onLostPointerCapture={onPointerUp}
+      onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
+      onBlur={onBlur}
     >
       <div className="flex h-full w-full gap-px">
         {whites.map((midi) => {
@@ -124,14 +163,14 @@ export function Piano() {
           const name = midiName(midi);
           const showName = name.startsWith("C") && !name.includes("#");
           return (
-            <div
+            <button
               key={midi}
+              type="button"
               data-midi={midi}
               aria-label={name}
               aria-pressed={on}
-              role="button"
               className={cn(
-                "relative flex min-w-0 flex-1 flex-col items-center justify-end rounded-b-md pb-2 pt-8",
+                "relative flex min-w-0 flex-1 flex-col items-center justify-end rounded-b-md pb-2 pt-8 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus",
                 "transition-[transform,background-color,box-shadow] duration-75 ease-out origin-top",
                 on
                   ? "translate-y-0.5 bg-key-white-active text-key-white-active-ink shadow-inner"
@@ -139,16 +178,16 @@ export function Piano() {
               )}
             >
               {hint && (
-                <span className="pointer-events-none absolute top-2 hidden font-mono text-[10px] opacity-40 sm:block">
+                <span className="pointer-events-none absolute top-2 hidden font-mono text-xs sm:block">
                   {hint}
                 </span>
               )}
               {showName && (
-                <span className="pointer-events-none max-w-full truncate px-0.5 font-mono text-[10px] tracking-wide">
+                <span className="pointer-events-none max-w-full truncate px-0.5 font-mono text-xs">
                   {name}
                 </span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -161,14 +200,14 @@ export function Piano() {
           const offset = midi - start;
           const hint = OFFSET_TO_HINT[offset];
           return (
-            <div
+            <button
               key={midi}
+              type="button"
               data-midi={midi}
               aria-label={midiName(midi)}
               aria-pressed={on}
-              role="button"
               className={cn(
-                "pointer-events-auto absolute top-0 z-10 h-[58%] rounded-b-md",
+                "pointer-events-auto absolute top-0 z-10 h-[58%] rounded-b-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus",
                 "transition-[transform,background-color] duration-75 ease-out origin-top",
                 on
                   ? "translate-y-0.5 bg-key-black-active text-key-black-active-ink"
@@ -180,11 +219,11 @@ export function Piano() {
               }}
             >
               {hint && (
-                <span className="pointer-events-none absolute inset-x-0 top-1.5 hidden text-center font-mono text-[9px] opacity-50 sm:block">
+                <span className="pointer-events-none absolute inset-x-0 top-1.5 hidden text-center font-mono text-xs sm:block">
                   {hint}
                 </span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>

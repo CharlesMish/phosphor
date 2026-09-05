@@ -16,7 +16,7 @@ export function SpaceBar() {
   return (
     <div className="grid gap-x-3 rounded-lg bg-surface px-3 py-1.5 shadow-border sm:grid-cols-2 sm:py-2">
       <label className="flex min-w-0 items-center gap-3">
-        <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-[0.16em] text-active">
+        <span className="w-12 shrink-0 font-mono text-xs uppercase tracking-wider text-active">
           Mix
         </span>
         <Slider
@@ -28,12 +28,12 @@ export function SpaceBar() {
           aria-label="Space mix"
           className="min-w-0 flex-1"
         />
-        <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted">
+        <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-muted">
           {Math.round(mix * 100)}%
         </span>
       </label>
       <label className="flex min-w-0 items-center gap-3">
-        <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-[0.16em] text-active">
+        <span className="w-12 shrink-0 font-mono text-xs uppercase tracking-wider text-active">
           Length
         </span>
         <Slider
@@ -46,7 +46,7 @@ export function SpaceBar() {
           aria-label="Space length"
           className="min-w-0 flex-1"
         />
-        <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted">
+        <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-muted">
           {seconds.toFixed(1)} s
         </span>
       </label>

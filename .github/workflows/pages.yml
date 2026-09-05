@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Run synth DSP tests
         run: npm run test:synth
       - name: Typecheck
