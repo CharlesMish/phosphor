@@ -10,7 +10,7 @@ export function TreatmentSelector() {
 
   return (
     <label
-      className="relative block shrink-0"
+      className="relative block max-w-full shrink-0"
       onPointerDown={(event) => event.stopPropagation()}
     >
       <span className="sr-only">Presentation treatment</span>
@@ -20,7 +20,7 @@ export function TreatmentSelector() {
           const nextTreatment = event.target.value;
           if (isTreatment(nextTreatment)) setTreatment(nextTreatment);
         }}
-        className="h-9 w-36 appearance-none rounded-md bg-surface-2 pl-2.5 pr-7 font-mono text-[10px] uppercase tracking-[0.14em] text-muted shadow-border outline-none transition-[color,box-shadow,background-color] hover:text-fg hover:shadow-border-hover focus-visible:ring-2 focus-visible:ring-focus/50 sm:w-44"
+        className="h-9 w-56 max-w-full appearance-none rounded-md bg-surface-2 pl-2.5 pr-7 font-mono text-xs uppercase tracking-[0.04em] text-muted shadow-border outline-none transition-[color,box-shadow,background-color] hover:text-fg hover:shadow-border-hover focus-visible:ring-2 focus-visible:ring-focus/50"
         aria-label="Presentation treatment"
         data-testid="treatment-selector"
       >

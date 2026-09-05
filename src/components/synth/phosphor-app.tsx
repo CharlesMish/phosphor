@@ -9,7 +9,8 @@ import { MotionEditor } from "./motion-editor";
 import { MotionPlaybackController } from "./motion-playback";
 import { Oscilloscope } from "./oscilloscope";
 import { Piano } from "./piano";
-import { HeaderBar, PresetBar, SideParams } from "./controls";
+import { HeaderBar, KeyboardControls, PresetBar, SideParams } from "./controls";
+import { EffectsSummary } from "./effects-summary";
 import { MorphBar } from "./morph-bar";
 import { SpaceBar } from "./space-bar";
 import { DriveBar } from "./drive-bar";
@@ -140,19 +141,22 @@ export function PhosphorApp() {
   return (
     <div
       data-phosphor-treatment={treatment}
-      className="flex h-dvh flex-col overflow-hidden bg-bg text-fg"
+      className="phosphor-app bg-bg text-fg"
       tabIndex={0}
       onPointerDown={() => synth.unlock()}
     >
       <MotionPlaybackController />
-      <div className="mx-auto flex min-h-0 w-full max-w-[92rem] flex-1 flex-col gap-2 overflow-hidden px-3 py-2 sm:px-5 sm:py-4 md:gap-3">
+      <main className="phosphor-shell">
         <div className="shrink-0">
           <HeaderBar />
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+        <div className="phosphor-workspace">
+          <section className="phosphor-drawing" aria-label="Sound editor">
             {domain === "motion" ? <MotionEditor /> : <WaveformEditor />}
+            <div className="phosphor-editor-tools">
+              <PresetBar />
+            </div>
             <div className="shrink-0">
               {domain === "space" ? (
                 <SpaceBar />
@@ -164,21 +168,19 @@ export function PhosphorApp() {
                 <MorphBar />
               )}
             </div>
-          </div>
-          <div className="flex w-full min-h-0 flex-col gap-3 lg:w-72 lg:shrink-0">
+          </section>
+          <aside className="phosphor-output" aria-label="Output and sound settings">
             <Oscilloscope />
             <SideParams />
-          </div>
+            <EffectsSummary />
+          </aside>
         </div>
 
-        <div className="shrink-0">
-          <PresetBar />
-        </div>
-
-        <section className="shrink-0 overflow-hidden rounded-xl bg-surface p-2 shadow-border pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <section className="phosphor-keyboard shrink-0 rounded-xl bg-surface p-2 shadow-border pb-[max(0.5rem,env(safe-area-inset-bottom))]" aria-label="Keyboard">
+          <KeyboardControls />
           <Piano />
         </section>
-      </div>
+      </main>
     </div>
   );
 }

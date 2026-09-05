@@ -3,6 +3,7 @@ import {
   readCanvasTreatmentTokens,
   type CanvasTreatmentTokens,
 } from "@/lib/presentation/canvas-tokens";
+import { useTreatment } from "@/lib/presentation/treatment";
 import { synth } from "@/lib/synth/engine";
 import { useSynthStore } from "@/lib/synth/store";
 import { findRisingZero } from "@/lib/synth/trigger";
@@ -36,6 +37,7 @@ function drawScopeGrid(
 
 export function Oscilloscope() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { treatment } = useTreatment();
   const active = useSynthStore((s) => s.activeNotes.length);
 
   useEffect(() => {
@@ -45,6 +47,9 @@ export function Oscilloscope() {
     if (!ctx) return;
     let raf = 0;
     const data = new Float32Array(2048);
+    // Treatment tokens are stable between switches; keep style reads out of RAF.
+    const tokens = readCanvasTreatmentTokens(canvas);
+    let needsClear = true;
 
     const draw = () => {
       raf = requestAnimationFrame(draw);
@@ -57,12 +62,14 @@ export function Oscilloscope() {
       if (canvas.width !== pw || canvas.height !== ph) {
         canvas.width = pw;
         canvas.height = ph;
+        needsClear = true;
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      const tokens = readCanvasTreatmentTokens(canvas);
-      ctx.fillStyle = tokens.scopeFade;
+      // A new treatment or canvas size starts with a clean, opaque plot.
+      ctx.fillStyle = needsClear ? tokens.plot : tokens.scopeFade;
       ctx.fillRect(0, 0, w, h);
+      needsClear = false;
       drawScopeGrid(ctx, w, h, tokens);
 
       const analyser = synth.getAnalyser();
@@ -109,11 +116,11 @@ export function Oscilloscope() {
 
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [treatment]);
 
   return (
     <div className="relative overflow-hidden rounded-lg bg-plot shadow-border">
-      <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex justify-between font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
+      <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex justify-between font-mono text-xs uppercase tracking-[0.08em] text-muted">
         <span>Output</span>
         <span className="tabular-nums">{active} voice{active === 1 ? "" : "s"}</span>
       </div>

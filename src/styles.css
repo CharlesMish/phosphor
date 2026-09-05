@@ -60,7 +60,7 @@
   --ph-surface-raised: #151d19;
   --ph-text: #e7f3eb;
   --ph-text-muted: #8da397;
-  --ph-text-faint: #6b8274;
+  --ph-text-faint: #82998a;
   --ph-border: #1d2923;
   --ph-border-strong: #2c4035;
   --ph-active: #91efbf;
@@ -178,7 +178,7 @@
   --ph-surface-raised: #0c1519;
   --ph-text: #dce6e9;
   --ph-text-muted: #85989f;
-  --ph-text-faint: #657c84;
+  --ph-text-faint: #7e959d;
   --ph-border: #13242a;
   --ph-border-strong: #203941;
   --ph-active: #aedce4;
@@ -235,7 +235,7 @@
   --ph-surface-raised: #191528;
   --ph-text: #eeeafd;
   --ph-text-muted: #aba5c3;
-  --ph-text-faint: #7d7696;
+  --ph-text-faint: #968dac;
   --ph-border: #28213c;
   --ph-border-strong: #40345d;
   --ph-active: #b9a9ff;
@@ -293,7 +293,7 @@
 
   html,
   body,
-  #app {
+  #root {
     min-height: 100dvh;
   }
 
@@ -321,6 +321,99 @@
 }
 
 @layer components {
+  .phosphor-app {
+    min-height: 100dvh;
+  }
+
+  .phosphor-shell {
+    display: flex;
+    min-height: 100dvh;
+    width: 100%;
+    max-width: 92rem;
+    margin-inline: auto;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .phosphor-workspace {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .phosphor-drawing {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .phosphor-output {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 0.75rem;
+  }
+
+  .phosphor-editor {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+  }
+
+  .phosphor-editor-head {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    padding: 0.625rem 0.75rem 0;
+  }
+
+  .phosphor-editor-description {
+    display: flex;
+    flex: 1 1 17rem;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--ph-text-muted);
+  }
+
+  .phosphor-editor-status-detail {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .phosphor-editor-canvas {
+    display: block;
+    width: 100%;
+    height: clamp(12rem, 40dvh, 28rem);
+    min-height: 12rem;
+    flex: 1 1 auto;
+  }
+
+  .phosphor-editor-caption {
+    flex: none;
+    padding: 0 0.875rem 0.625rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--ph-text-muted);
+  }
+
+  .phosphor-editor-tools {
+    padding: 0.5rem;
+    border-radius: var(--radius-lg);
+    background: var(--ph-surface);
+    box-shadow: var(--ph-shadow-border);
+  }
+
   .phosphor-wordmark {
     font-family: var(--ph-title-font);
     font-weight: var(--ph-title-weight);
@@ -339,18 +432,33 @@
   }
 }
 
-@media (max-height: 700px) {
-  .phosphor-editor-status {
-    inset-inline: 0.5rem;
-    top: 0.25rem;
+@media (min-width: 40rem) {
+  .phosphor-shell {
+    padding: 1rem 1.25rem;
   }
-
-  .phosphor-editor-title {
-    display: none;
+  .phosphor-output {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+  .phosphor-effects {
+    grid-column: 1 / -1;
+  }
+}
 
-  .phosphor-editor-status-detail {
-    font-size: 9px;
-    letter-spacing: 0.1em;
+@media (min-width: 64rem) {
+  .phosphor-workspace {
+    grid-template-columns: minmax(0, 1fr) 17.5rem;
+  }
+  .phosphor-output {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* On roomy desktops use the viewport; short screens keep natural page scrolling. */
+@media (min-width: 75rem) and (min-height: 56rem) {
+  .phosphor-shell {
+    height: 100dvh;
+  }
+  .phosphor-editor-canvas {
+    height: 0;
   }
 }

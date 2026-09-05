@@ -44,13 +44,13 @@ function Slot({
       size="sm"
       onClick={onCapture}
       className={cn(
-        "h-10 min-w-[4.25rem] flex-col gap-0 px-2 py-1 sm:h-11",
+        "h-11 min-w-[4.5rem] flex-col gap-0 px-2 py-1 sm:h-11",
         samples && "text-trace",
       )}
       aria-label={samples ? `Recapture slot ${label}` : `Capture current waveform as ${label}`}
     >
       <WaveThumb samples={samples} />
-      <span className="font-mono text-[10px] uppercase tracking-wider">
+      <span className="font-mono text-xs uppercase tracking-wider">
         {samples ? label : `Set ${label}`}
       </span>
     </Button>
@@ -72,10 +72,10 @@ export function MorphBar() {
   return (
     <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-surface px-2 py-1.5 shadow-border sm:gap-2 sm:py-2">
       <Slot label="A" samples={slotA} onCapture={captureA} />
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex min-w-32 flex-1 basis-40 items-center gap-2">
         <span
           className={cn(
-            "w-12 shrink-0 font-mono text-[10px] uppercase tracking-[0.16em]",
+            "w-12 shrink-0 font-mono text-xs uppercase tracking-wider",
             engaged ? "text-active" : "text-faint",
           )}
         >
@@ -107,7 +107,7 @@ export function MorphBar() {
         />
         {engaged && (
           <span
-            className="hidden shrink-0 font-mono text-[10px] uppercase tracking-[0.16em] text-faint sm:block"
+            className="hidden shrink-0 font-mono text-xs uppercase tracking-wider text-faint sm:block"
             title="Hold K on the keyboard, then drag morph with the mouse"
           >
             Hold K
@@ -124,7 +124,7 @@ export function MorphBar() {
         aria-label="Swap A and B"
       >
         <ArrowLeftRight className="size-3.5" aria-hidden />
-        <span className="font-mono text-[10px] uppercase tracking-wider">Swap</span>
+        <span className="font-mono text-xs uppercase tracking-wider">Swap</span>
       </Button>
     </div>
   );

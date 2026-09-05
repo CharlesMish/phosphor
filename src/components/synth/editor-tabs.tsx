@@ -15,7 +15,7 @@ export function EditorTabs() {
 
   return (
     <div
-      className="pointer-events-auto flex min-w-0 overflow-x-auto rounded-md bg-surface-2 p-0.5 shadow-border"
+      className="flex min-w-0 flex-wrap gap-0.5 rounded-md bg-surface-2 p-0.5 shadow-border"
       aria-label="Drawing editor"
       role="group"
     >
@@ -26,8 +26,8 @@ export function EditorTabs() {
             key={editor.domain}
             type="button"
             className={cn(
-              "h-7 shrink-0 rounded px-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
-              active ? "bg-active text-active-ink" : "text-faint hover:text-fg",
+              "min-h-9 flex-1 rounded px-2 font-mono text-xs uppercase tracking-wider outline-none transition-colors focus-visible:ring-2 focus-visible:ring-focus",
+              active ? "bg-active text-active-ink" : "text-muted hover:text-fg",
             )}
             aria-pressed={active}
             onClick={() => setDomain(editor.domain)}

@@ -20,16 +20,16 @@ export function DriveBar() {
           className="size-4 shrink-0 accent-active outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
         />
         <span
-          className={`font-mono text-[10px] uppercase tracking-[0.16em] ${safe ? "text-active" : "text-faint"}`}
+          className={`font-mono text-xs uppercase tracking-wider ${safe ? "text-active" : "text-faint"}`}
         >
           Safe
         </span>
-        <span className="min-w-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+        <span className="min-w-0 font-mono text-xs uppercase tracking-wider text-muted">
           {safe ? "on · max 25%" : "off"}
         </span>
       </label>
       <label className="flex min-h-11 min-w-0 items-center gap-3">
-        <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-[0.16em] text-active">
+        <span className="w-14 shrink-0 font-mono text-xs uppercase tracking-wider text-active">
           Amount
         </span>
         <Slider
@@ -54,7 +54,7 @@ export function DriveBar() {
             </>
           }
         />
-        <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted">
+        <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-muted">
           {percent}%
         </span>
       </label>

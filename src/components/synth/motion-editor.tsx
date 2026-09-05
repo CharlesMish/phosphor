@@ -288,22 +288,22 @@ export function MotionEditor() {
   useEffect(() => () => finishActiveGesture(), [finishActiveGesture]);
 
   return (
-    <div className="relative flex min-h-32 flex-1 flex-col overflow-hidden rounded-xl bg-plot shadow-border md:min-h-0">
-      <div className="pointer-events-none absolute inset-x-3 top-2 z-10 flex min-w-0 items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <EditorTabs />
-          <span className="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-faint sm:inline">
+    <div className="phosphor-editor rounded-xl bg-plot shadow-border">
+      <div className="phosphor-editor-head">
+        <EditorTabs />
+        <div className="phosphor-editor-description">
+          <span className="phosphor-editor-title">
             Motion · A/B trajectory
           </span>
-        </div>
-        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-faint">
+        <span className="phosphor-editor-status-detail">
           {motionBeats} {motionBeats === 1 ? "beat" : "beats"} ·{" "}
           {formatSeconds(motionDurationSeconds(motionBpm, motionBeats))}
         </span>
+        </div>
       </div>
       <canvas
         ref={canvasRef}
-        className="h-full min-h-32 w-full flex-1 touch-none cursor-crosshair md:min-h-0"
+        className="phosphor-editor-canvas touch-none cursor-crosshair"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDraw}
@@ -311,11 +311,9 @@ export function MotionEditor() {
         aria-label="Draw A to B motion trajectory"
         aria-disabled={!armed}
       />
-      {!armed && (
-        <p className="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-xs tracking-wide text-muted/80">
-          Capture A + B to use Motion
+        <p className="phosphor-editor-caption" aria-live="polite">
+          {armed ? "Drag to draw the A/B blend over time" : "In Cycle, set A, draw a different wave, then set B to use Motion"}
         </p>
-      )}
     </div>
   );
 }
