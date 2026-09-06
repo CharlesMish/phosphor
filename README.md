@@ -81,7 +81,7 @@ The `study/panel-design-lanes` branch compares three playable panel layouts:
 
 - **Bench** joins drawing and editing into one framed instrument with a quiet right-hand rack.
 - **Signal Desk** uses a full-width plot above a horizontal output/settings band.
-- **Control Cabinet** uses square compartments with a left-hand control rack.
+- **Control Cabinet** uses square compartments with the main plot on the left and a control rack on the right. It is the selected default.
 
 The layout selector and the Figurestead treatment selector are independent.
 Each lane uses the same mounted instrument and audio state; switching layouts

@@ -118,7 +118,7 @@
 [data-phosphor-panel="desk"] .phosphor-output { gap: 1px; background: var(--ph-border-strong); border: 1px solid var(--ph-border-strong); border-radius: 0.25rem; }
 [data-phosphor-panel="desk"] .phosphor-output > * { border-radius: 0; box-shadow: none; }
 
-/* 03 / CONTROL CABINET — aligned controls and square divisions at the left. */
+/* 03 / CONTROL CABINET — left-hand plot, right-hand controls, square divisions. */
 [data-phosphor-panel="cabinet"] .phosphor-shell {
   width: calc(100% - 2.5rem);
   max-width: 85.5rem;
@@ -164,12 +164,12 @@
   [data-phosphor-panel="desk"] .phosphor-effects-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   [data-phosphor-panel="desk"] .phosphor-effects-list button { flex-direction: column; align-items: start; gap: 0.375rem; }
   [data-phosphor-panel="desk"] .phosphor-scope canvas { height: 7rem; }
-  [data-phosphor-panel="cabinet"] .phosphor-shell { display: grid; grid-template-columns: 16rem minmax(0, 1fr); }
-  [data-phosphor-panel="cabinet"] .phosphor-heading { grid-column: 1; grid-row: 1; border-right: 1px solid var(--ph-border-strong); }
+  [data-phosphor-panel="cabinet"] .phosphor-shell { display: grid; grid-template-columns: minmax(0, 1fr) 16rem; }
+  [data-phosphor-panel="cabinet"] .phosphor-heading { grid-column: 2; grid-row: 1; border-left: 1px solid var(--ph-border-strong); }
   [data-phosphor-panel="cabinet"] .phosphor-heading header { gap: 1rem; }
   [data-phosphor-panel="cabinet"] .phosphor-workspace { display: contents; }
-  [data-phosphor-panel="cabinet"] .phosphor-drawing { grid-column: 2; grid-row: 1 / span 2; border: 0; }
-  [data-phosphor-panel="cabinet"] .phosphor-output { grid-column: 1; grid-row: 2; border-right: 1px solid var(--ph-border-strong); }
+  [data-phosphor-panel="cabinet"] .phosphor-drawing { grid-column: 1; grid-row: 1 / span 2; border: 0; }
+  [data-phosphor-panel="cabinet"] .phosphor-output { grid-column: 2; grid-row: 2; border-left: 1px solid var(--ph-border-strong); }
   [data-phosphor-panel="cabinet"] .phosphor-scope canvas { height: 6.5rem; }
   [data-phosphor-panel="cabinet"] .phosphor-envelope { gap: 0.25rem; }
   [data-phosphor-panel="cabinet"] .phosphor-keyboard { grid-column: 1 / -1; grid-row: 3; }

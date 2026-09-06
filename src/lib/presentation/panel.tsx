@@ -20,7 +20,7 @@ export const PANEL_OPTIONS = [
     number: "03",
     label: "Control Cabinet",
     short: "A technical control panel",
-    description: "A left-hand control rack, precise divisions, and a large, square-edged plotting surface.",
+    description: "A large, square-edged plotting surface on the left, with precise divisions and a control rack on the right.",
   },
 ] as const;
 
@@ -29,7 +29,7 @@ type PanelContextValue = { panel: Panel; setPanel: (panel: Panel) => void };
 const PanelContext = createContext<PanelContextValue | null>(null);
 
 export function PanelProvider({ children }: { children: ReactNode }) {
-  const [panel, setPanel] = useState<Panel>("bench");
+  const [panel, setPanel] = useState<Panel>("cabinet");
   const value = useMemo(() => ({ panel, setPanel }), [panel]);
   return <PanelContext.Provider value={value}>{children}</PanelContext.Provider>;
 }
