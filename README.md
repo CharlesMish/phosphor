@@ -105,3 +105,42 @@ playable main baseline.
 Typecheck/build and a DOM regression probe for layout/state preservation passed.
 The DOM probe checks node identity, synth data/history, no panic on lane change,
 and independent treatment selection; it does not validate browser geometry.
+
+## Motion continuity repair
+
+`fix/phase-continuous-motion` carries the selected Control Cabinet layout and
+ports the audio-only repair from the earlier, unmerged `1c7c4bd` quality study.
+Manual morph, Motion drawing audition, and Motion playback now share a persistent
+pair of oscillators per note. A and B start at the same audio timestamp; later
+morph frames ramp complementary gains over 32 ms instead of replacing oscillators
+and rebuilding wave tables. Repeated flat frames leave the existing ramp alone.
+Interrupted ramps resume from the calculated current blend, including loop wraps.
+
+Endpoints are conditioned once per endpoint change. Intermediate blends are no
+longer normalized to full height: opposite endpoints can become quiet or cancel,
+and the displayed Cycle samples represent that same linear blend. This deliberately
+changes the loudness of some existing A/B transitions. Direct Cycle drawing keeps
+its existing single-wave crossfade. Entering morph on a held note or replacing a
+captured endpoint still makes one structural crossfade and can have a brief phase
+interaction; it does not recur on every Motion frame.
+
+The repair also cancels queued direct-wave updates when morph takes over or a
+finished drawing supplies an immediate update. Polyphony, release, voice stealing,
+effects, treatments, and the one-shot default remain intact. Motion still reads the
+audio clock from a 30 Hz main-thread timer: gain ramps remove hard control steps,
+but this is not sample-accurate look-ahead transport scheduling. An intentionally
+looped ramp still returns toward A at the seam, now through the gain ramp; use
+ping-pong for an outward-and-return trajectory.
+
+Validation: 91 tests pass, including engine-node lifecycle, gain-ramp interruption,
+queued-update cancellation, store dispatch, identical/near-identical endpoints,
+linear cancellation, and the existing history/effect tests. Typecheck and the
+production build pass. These tests do not substitute for an audible browser check.
+
+An additional real-browser OfflineAudioContext probe is included. Start `npm run
+dev`, open `/phosphor/scripts/qa/morph-render.html` on the dev server, and click
+**Run audio checks**. It compares flat and tiny Motion against static references,
+reproduces the old oscillator-swap behavior through the generic waveform API, and
+checks cancellation. It taps the actual voice envelope before effects and plays
+no audio. This browser probe was not executed in the repair environment because
+the local browser connection was unavailable and direct file navigation was blocked.

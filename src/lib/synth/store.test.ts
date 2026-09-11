@@ -10,6 +10,7 @@ import { generateSpaceContour } from "./space.ts";
 import { generateDrivePreset } from "./drive.ts";
 import { generateChorusPreset } from "./chorus.ts";
 import { useSynthStore } from "./store.ts";
+import { cycleMorphSamples, synth } from "./engine.ts";
 import { generatePreset } from "./waveform.ts";
 
 const initialState = useSynthStore.getInitialState();
@@ -71,6 +72,30 @@ function startMotion() {
 
 describe("MOTION store authority", () => {
   beforeEach(resetStore);
+
+  it("sends manual, drawing, and playback morphs to the persistent voice path", (t) => {
+    const { slotA, slotB } = armMorph();
+    const morph = t.mock.method(synth, "setCycleMorph", () => {});
+    const wave = t.mock.method(synth, "setWaveform", () => {});
+    useSynthStore.getState().setMorph(0.2);
+    useSynthStore.getState().auditionMotion(0.3);
+    const runId = startMotion();
+    useSynthStore.getState().setMotionPlaybackPosition(0.4, 0.4, false, runId);
+    assert.equal(morph.mock.callCount(), 4);
+    assert.equal(wave.mock.callCount(), 0);
+    const args = morph.mock.calls.at(-1)!.arguments;
+    assert.deepEqual(args.slice(0, 3), [slotA, slotB, 0.4]);
+    assert.deepEqual(useSynthStore.getState().samples, cycleMorphSamples(slotA, slotB, 0.4));
+  });
+
+  it("does not amplify near-cancelling morph samples in the store", () => {
+    const { slotA } = armMorph();
+    const slotB = slotA.map(x => -x);
+    useSynthStore.setState({ slotB });
+    useSynthStore.getState().setMorph(0.49, true);
+    const peak = Math.max(...useSynthStore.getState().samples.map(Math.abs));
+    assert.ok(Math.abs(peak - 0.018) < 1e-12);
+  });
 
   it("starts optional effects with conservative audition defaults", () => {
     const state = useSynthStore.getState();
