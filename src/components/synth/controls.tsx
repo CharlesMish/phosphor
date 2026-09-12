@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { TreatmentSelector } from "./treatment-selector";
 import { MotionShapes } from "./motion-shapes";
+import { MotionRoutes } from "./motion-routes";
+import { hasPlayableMotionRoute } from "@/lib/synth/motion-routing";
 import {
   useSynthStore,
   type DrivePreset,
@@ -235,7 +237,7 @@ export function PresetBar() {
   const undo = useSynthStore((s) => s.undo);
   const redo = useSynthStore((s) => s.redo);
   const motionPlaying = useSynthStore((s) => s.motionPlaying);
-  const motionArmed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
+  const motionArmed = useSynthStore((s) => hasPlayableMotionRoute(s.motionRoutes, Boolean(s.slotA && s.slotB)));
   const playMotion = useSynthStore((s) => s.playMotion);
   const stopMotion = useSynthStore((s) => s.stopMotion);
   const motionBpm = useSynthStore((s) => s.motionBpm);
@@ -293,6 +295,7 @@ export function PresetBar() {
     return (
       <div className="grid gap-3">
         <MotionShapes />
+        <MotionRoutes />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-faint">

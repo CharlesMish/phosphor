@@ -51,7 +51,7 @@ import {
   MOTION_BEAT_LENGTHS,
   clampMotionBpm,
   cloneMotionPath,
-  complementMotionPath,
+  clampMotionValue,
   createDefaultMotionPath,
   generateMotionPreset,
   motionPathsDiffer,
@@ -60,6 +60,16 @@ import {
   type MotionMode,
   type MotionPreset,
 } from "./motion";
+import {
+  DEFAULT_MOTION_ROUTES,
+  clampMotionEndpoint,
+  hasPlayableMotionRoute,
+  mapMotionRoute,
+  type MotionRoutes,
+  type MotionRouteId,
+  type MotionNumericRouteId,
+  type MotionRouteEndpoint,
+} from "./motion-routing";
 
 export type { WavePreset, SpacePreset, DrivePreset, ChorusPreset };
 
@@ -108,6 +118,7 @@ type SynthState = {
   motionBpm: number;
   motionBeats: MotionBeats;
   motionMode: MotionMode;
+  motionRoutes: MotionRoutes;
   motionPast: number[][];
   motionFuture: number[][];
   past: number[][];
@@ -163,6 +174,8 @@ type SynthActions = {
   setMotionBpm: (bpm: number) => void;
   setMotionBeats: (beats: MotionBeats) => void;
   setMotionMode: (mode: MotionMode) => void;
+  setMotionRouteEnabled: (route: MotionRouteId, enabled: boolean) => void;
+  setMotionRouteEndpoint: (route: MotionNumericRouteId, endpoint: MotionRouteEndpoint, value: number) => void;
   setMotionPlaybackPosition: (
     t: number,
     progress: number,
@@ -295,6 +308,46 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
     return true;
   };
 
+  // One sampled value drives every enabled destination. Motion frames never
+  // invoke manual setters or create authored history entries.
+  const applyMotionValue = (
+    value: number,
+    immediate: boolean,
+    motionState: Partial<SynthState>,
+  ) => {
+    const state = get();
+    const routes = state.motionRoutes;
+    if (!hasPlayableMotionRoute(routes, Boolean(state.slotA && state.slotB))) return false;
+    const u = clampMotionValue(value);
+    const next: Partial<SynthState> = { ...motionState };
+    const cycle = routes.cycle.enabled && state.slotA && state.slotB;
+    if (cycle) {
+      const morph = routes.cycle.inverted ? 1 - u : u;
+      Object.assign(next, {
+        morph,
+        samples: morphSamples(state.slotA!, state.slotB!, morph),
+        preset: "custom",
+        hasDrawn: true,
+        morphLive: true,
+      });
+    }
+    for (const id of ["driveAmount", "chorusMix", "spaceMix"] as const) {
+      if (routes[id].enabled) next[id] = mapMotionRoute(id, routes[id], u);
+    }
+    set(next);
+    if (cycle) synth.setCycleMorph(state.slotA!, state.slotB!, next.morph!, immediate);
+    if (next.driveAmount !== undefined && next.driveAmount !== state.driveAmount) {
+      applyDrive(state.driveCurve, next.driveAmount, state.driveSafe);
+    }
+    if (next.chorusMix !== undefined && next.chorusMix !== state.chorusMix) synth.setChorusMix(next.chorusMix);
+    if (next.spaceMix !== undefined && next.spaceMix !== state.spaceMix) synth.setSpaceMix(next.spaceMix);
+    return true;
+  };
+
+  const stopForManualRoute = (route: MotionNumericRouteId) => {
+    if (get().motionPlaying && get().motionRoutes[route].enabled) set({ motionPlaying: false });
+  };
+
   return {
   domain: "cycle",
   samples: initialSamples,
@@ -312,6 +365,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   morph: 0,
   morphLive: false,
   motionPath: initialMotionPath,
+  motionRoutes: DEFAULT_MOTION_ROUTES,
   motionPlaying: false,
   motionProgress: 0,
   motionRunId: 0,
@@ -404,6 +458,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   setDriveAmount: (amount) => {
+    stopForManualRoute("driveAmount");
     const { driveCurve, driveSafe } = get();
     const clamped = clampDriveAmount(amount);
     const next = driveSafe
@@ -415,6 +470,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   setDriveSafe: (safe) => {
+    stopForManualRoute("driveAmount");
     const state = get();
     const nextAmount = safe
       ? Math.min(DRIVE_SAFE_MAX_AMOUNT, state.driveAmount)
@@ -475,6 +531,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   setChorusMix: (mix) => {
+    stopForManualRoute("chorusMix");
     const next = Math.min(1, Math.max(0, mix));
     set({ chorusMix: next });
     synth.setChorusMix(next);
@@ -561,14 +618,16 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
     });
   },
   swapSlots: () => {
-    const { slotA, slotB, morph, motionPath, motionPast, motionFuture } = get();
+    const { slotA, slotB, morph, motionRoutes } = get();
     set({
       slotA: slotB ? cloneWave(slotB) : null,
       slotB: slotA ? cloneWave(slotA) : null,
       morph: 1 - morph,
-      motionPath: complementMotionPath(motionPath),
-      motionPast: motionPast.map(complementMotionPath),
-      motionFuture: motionFuture.map(complementMotionPath),
+      // Swapping Cycle endpoints must not invert the other effects' motion.
+      motionRoutes: {
+        ...motionRoutes,
+        cycle: { ...motionRoutes.cycle, inverted: !motionRoutes.cycle.inverted },
+      },
       motionPlaying: false,
     });
   },
@@ -577,7 +636,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   auditionMotion: (t, immediate = false) => {
-    applyMorphPosition(t, "motion-drawing", immediate);
+    applyMotionValue(t, immediate, { motionPlaying: false });
   },
 
   setLiveMotionPath: (path) => {
@@ -608,11 +667,11 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   playMotion: () => {
-    const { slotA, slotB, motionPath, motionRunId } = get();
-    if (!slotA || !slotB) return;
+    const { slotA, slotB, motionPath, motionRunId, motionRoutes } = get();
+    if (!hasPlayableMotionRoute(motionRoutes, Boolean(slotA && slotB))) return;
     synth.unlock();
     const nextRunId = motionRunId + 1;
-    applyMorphPosition(sampleMotionPath(motionPath, 0), "motion-playback", true, {
+    applyMotionValue(sampleMotionPath(motionPath, 0), true, {
       motionPlaying: true,
       motionProgress: 0,
       motionRunId: nextRunId,
@@ -627,10 +686,23 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
   setMotionMode: (mode) => set({ motionMode: mode }),
 
+  setMotionRouteEnabled: (route, enabled) => {
+    const routes = get().motionRoutes;
+    set({ motionPlaying: false, motionRoutes: { ...routes, [route]: { ...routes[route], enabled } } });
+  },
+
+  setMotionRouteEndpoint: (route, endpoint, value) => {
+    const routes = get().motionRoutes;
+    set({
+      motionPlaying: false,
+      motionRoutes: { ...routes, [route]: { ...routes[route], [endpoint]: clampMotionEndpoint(route, value) } },
+    });
+  },
+
   setMotionPlaybackPosition: (t, progress, complete, runId) => {
     const state = get();
     if (!state.motionPlaying || state.motionRunId !== runId) return;
-    applyMorphPosition(t, "motion-playback", complete, {
+    applyMotionValue(t, complete, {
       motionProgress: Math.min(1, Math.max(0, progress)),
       ...(complete ? { motionPlaying: false } : {}),
     });
@@ -730,6 +802,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   },
 
   setSpaceMix: (mix) => {
+    stopForManualRoute("spaceMix");
     const next = Math.min(1, Math.max(0, mix));
     set({ spaceMix: next });
     synth.setSpaceMix(next);

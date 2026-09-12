@@ -1,0 +1,166 @@
+import {
+  motionRouteLimit,
+  type MotionNumericRoute,
+  type MotionNumericRouteId,
+  type MotionRouteEndpoint,
+  type MotionRouteId,
+} from "@/lib/synth/motion-routing";
+import { useSynthStore } from "@/lib/synth/store";
+import { cn } from "@/lib/utils";
+
+function PercentEndpoint({
+  route,
+  endpoint,
+  value,
+  label,
+}: {
+  route: MotionNumericRouteId;
+  endpoint: MotionRouteEndpoint;
+  value: number;
+  label: string;
+}) {
+  const setEndpoint = useSynthStore((s) => s.setMotionRouteEndpoint);
+  return (
+    <label className="flex items-center gap-1">
+      <span className="sr-only">{label}</span>
+      <input
+        type="number"
+        min={0}
+        max={motionRouteLimit(route) * 100}
+        step={1}
+        value={Math.round(value * 100)}
+        onChange={(event) => {
+          const percent = event.currentTarget.valueAsNumber;
+          if (Number.isFinite(percent)) {
+            setEndpoint(route, endpoint, percent / 100);
+          }
+        }}
+        className="h-9 w-16 rounded bg-surface-2 px-1.5 text-right font-mono text-xs tabular-nums text-fg shadow-border outline-none focus-visible:ring-2 focus-visible:ring-focus/50 disabled:opacity-45"
+      />
+      <span className="text-xs text-muted">%</span>
+    </label>
+  );
+}
+
+function RouteToggle({
+  route,
+  checked,
+  label,
+}: {
+  route: MotionRouteId;
+  checked: boolean;
+  label: string;
+}) {
+  const setEnabled = useSynthStore((s) => s.setMotionRouteEnabled);
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => setEnabled(route, !checked)}
+      className="flex min-w-20 items-center gap-2 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-focus/50"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "grid size-4 shrink-0 place-items-center rounded-sm border text-xs leading-none",
+          checked
+            ? "border-active bg-active text-active-ink"
+            : "border-faint text-transparent",
+        )}
+      >
+        ✓
+      </span>
+      <span
+        className={cn(
+          "font-mono text-xs uppercase tracking-[0.14em]",
+          checked ? "text-active" : "text-faint",
+        )}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function NumericRouteRow({
+  id,
+  label,
+  route,
+}: {
+  id: MotionNumericRouteId;
+  label: string;
+  route: MotionNumericRoute;
+}) {
+  return (
+    <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-md bg-surface px-2 py-0.5 shadow-border">
+      <RouteToggle route={id} checked={route.enabled} label={label} />
+      <div className="ml-auto flex items-center gap-1 font-mono text-xs text-faint">
+        <PercentEndpoint
+          route={id}
+          endpoint="from"
+          value={route.from}
+          label={`${label} Motion from`}
+        />
+        <span aria-hidden>→</span>
+        <PercentEndpoint
+          route={id}
+          endpoint="to"
+          value={route.to}
+          label={`${label} Motion to`}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function MotionRoutes() {
+  const routes = useSynthStore((s) => s.motionRoutes);
+  const playing = useSynthStore((s) => s.motionPlaying);
+  const cycleAvailable = useSynthStore((s) => Boolean(s.slotA && s.slotB));
+
+  return (
+    <fieldset
+      disabled={playing}
+      className="min-w-0"
+      aria-label="Motion routes"
+    >
+      <div className="mb-1 flex items-center gap-2 font-mono text-xs uppercase tracking-[0.16em] text-faint">
+        <span>Destinations</span>
+        <span className="text-muted">One shape · synchronized amounts</span>
+      </div>
+      <div className="grid gap-1 sm:grid-cols-2">
+        <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-md bg-surface px-2 py-0.5 shadow-border">
+          <RouteToggle
+            route="cycle"
+            checked={routes.cycle.enabled}
+            label="Cycle A/B"
+          />
+          <span className="ml-auto font-mono text-xs uppercase tracking-[0.12em] text-muted">
+            {cycleAvailable
+              ? routes.cycle.inverted
+                ? "B → A"
+                : "A → B"
+              : "Needs A+B"}
+          </span>
+        </div>
+        <NumericRouteRow
+          id="driveAmount"
+          label="Drive amount"
+          route={routes.driveAmount}
+        />
+        <NumericRouteRow
+          id="chorusMix"
+          label="Chorus wet"
+          route={routes.chorusMix}
+        />
+        <NumericRouteRow
+          id="spaceMix"
+          label="Space wet"
+          route={routes.spaceMix}
+        />
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-muted">Ranges follow the bottom → top of the graph. Drive automation is capped at 25%; its Identity curve stays clean. Stop holds the current values; moving an automated control stops Motion.</p>
+    </fieldset>
+  );
+}

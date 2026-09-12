@@ -658,7 +658,7 @@ describe("CHORUS store history", () => {
 describe("MOTION store history and A/B coordinates", () => {
   beforeEach(resetStore);
 
-  it("transforms slots, morph, path, and histories on Swap without changing sound", () => {
+  it("swaps Cycle coordinates without inverting the shared path or effect automation", () => {
     const slotA = [0, 0.25, 0.5];
     const slotB = [1, 0.75, 0.5];
     const soundingSamples = [0.2, -0.1, 0.4];
@@ -683,15 +683,10 @@ describe("MOTION store history and A/B coordinates", () => {
     assert.notStrictEqual(state.slotA, slotB);
     assert.notStrictEqual(state.slotB, slotA);
     assert.equal(state.morph, 0.7);
-    assert.deepEqual(state.motionPath, [1, 0.75, 0]);
-    assert.deepEqual(
-      state.motionPast,
-      motionPast.map((path) => path.map((value) => 1 - value)),
-    );
-    assert.deepEqual(
-      state.motionFuture,
-      motionFuture.map((path) => path.map((value) => 1 - value)),
-    );
+    assert.strictEqual(state.motionPath, motionPath);
+    assert.strictEqual(state.motionPast, motionPast);
+    assert.strictEqual(state.motionFuture, motionFuture);
+    assert.equal(state.motionRoutes.cycle.inverted, true);
     assert.equal(state.motionPast.length, motionPast.length);
     assert.equal(state.motionFuture.length, motionFuture.length);
     assert.strictEqual(state.samples, soundingSamples);
@@ -742,5 +737,155 @@ describe("MOTION store history and A/B coordinates", () => {
     assert.equal(state.morph, 0.42);
     assert.strictEqual(state.samples, soundingSamples);
     assert.equal(state.motionPlaying, false);
+  });
+});
+
+describe("shared Motion destinations", () => {
+  beforeEach(resetStore);
+
+  function enableEffects() {
+    const state = useSynthStore.getState();
+    state.setMotionRouteEnabled("driveAmount", true);
+    state.setMotionRouteEnabled("chorusMix", true);
+    state.setMotionRouteEnabled("spaceMix", true);
+  }
+
+  it("plays all effect destinations without A/B and leaves all authored data intact", (t) => {
+    enableEffects();
+    useSynthStore.setState({ motionPath: [0.5, 1], driveSafe: false });
+    const before = useSynthStore.getState();
+    const cycle = t.mock.method(synth, "setCycleMorph", () => {});
+    const wave = t.mock.method(synth, "setWaveform", () => {});
+    const drive = t.mock.method(synth, "setDriveState", () => {});
+    const chorus = t.mock.method(synth, "setChorusMix", () => {});
+    const space = t.mock.method(synth, "setSpaceMix", () => {});
+    const spaceBuffer = t.mock.method(synth, "setSpace", () => {});
+    const lfo = t.mock.method(synth, "setChorusCurve", () => {});
+    const run = startMotion();
+    const first = useSynthStore.getState();
+    assert.equal(first.driveAmount, 0.125);
+    assert.equal(first.chorusMix, 0.175);
+    assert.ok(Math.abs(first.spaceMix - 0.35) < 1e-12);
+    assert.equal(drive.mock.calls.at(-1)!.arguments[1], 0.125);
+    assert.equal(chorus.mock.calls.at(-1)!.arguments[0], 0.175);
+    assert.ok(Math.abs(space.mock.calls.at(-1)!.arguments[0]! - 0.35) < 1e-12);
+    first.setMotionPlaybackPosition(1, 1, true, run);
+    const after = useSynthStore.getState();
+    assert.equal(after.motionPlaying, false);
+    assert.equal(after.driveAmount, 0.25);
+    assert.equal(after.chorusMix, 0.35);
+    assert.equal(after.spaceMix, 0.55);
+    for (const key of ["samples", "driveCurve", "chorusCurve", "spaceContour", "past", "future", "motionPast", "drivePast", "chorusPast", "spacePast"] as const) {
+      assert.strictEqual(after[key], before[key], key);
+    }
+    assert.equal(cycle.mock.callCount(), 0);
+    assert.equal(wave.mock.callCount(), 0);
+    assert.equal(spaceBuffer.mock.callCount(), 0);
+    assert.equal(lfo.mock.callCount(), 0);
+  });
+
+  it("synchronizes Cycle with effects and keeps the direct morph slider independent", (t) => {
+    armMorph();
+    enableEffects();
+    const cycle = t.mock.method(synth, "setCycleMorph", () => {});
+    const drive = t.mock.method(synth, "setDriveState", () => {});
+    const chorus = t.mock.method(synth, "setChorusMix", () => {});
+    const space = t.mock.method(synth, "setSpaceMix", () => {});
+    const run = startMotion();
+    useSynthStore.getState().setMotionPlaybackPosition(0.8, 0.4, false, run);
+    assert.equal(cycle.mock.calls.at(-1)!.arguments[2], 0.8);
+    assert.equal(drive.mock.calls.at(-1)!.arguments[1], 0.2);
+    assert.ok(Math.abs(chorus.mock.calls.at(-1)!.arguments[0]! - 0.28) < 1e-12);
+    const before = useSynthStore.getState();
+    const effectsCalls = [drive.mock.callCount(), chorus.mock.callCount(), space.mock.callCount()];
+    before.setMorph(0.1);
+    const after = useSynthStore.getState();
+    assert.equal(after.motionPlaying, false);
+    assert.equal(after.morph, 0.1);
+    assert.equal(after.driveAmount, before.driveAmount);
+    assert.deepEqual([drive.mock.callCount(), chorus.mock.callCount(), space.mock.callCount()], effectsCalls);
+  });
+
+  it("freezes effect amounts on Stop and rejects late updates", () => {
+    enableEffects();
+    const run = startMotion();
+    useSynthStore.getState().setMotionPlaybackPosition(0.6, 0.2, false, run);
+    const before = useSynthStore.getState();
+    before.stopMotion();
+    useSynthStore.getState().setMotionPlaybackPosition(1, 0.9, false, run);
+    const after = useSynthStore.getState();
+    assert.equal(after.driveAmount, before.driveAmount);
+    assert.equal(after.chorusMix, before.chorusMix);
+    assert.equal(after.spaceMix, before.spaceMix);
+  });
+
+  it("gives manual effect controls authority over an active route", () => {
+    for (const route of ["driveAmount", "chorusMix", "spaceMix"] as const) {
+      resetStore();
+      useSynthStore.getState().setMotionRouteEnabled(route, true);
+      const run = startMotion();
+      const state = useSynthStore.getState();
+      if (route === "driveAmount") state.setDriveAmount(0.19);
+      else if (route === "chorusMix") state.setChorusMix(0.19);
+      else state.setSpaceMix(0.19);
+      assert.equal(useSynthStore.getState().motionPlaying, false);
+      useSynthStore.getState().setMotionPlaybackPosition(1, 1, true, run);
+      assert.equal(useSynthStore.getState()[route], 0.19);
+    }
+  });
+
+  it("stops on routing edits, clamps Drive ranges, and rejects previous run ids", () => {
+    enableEffects();
+    const run = startMotion();
+    useSynthStore.getState().setMotionRouteEndpoint("driveAmount", "to", 1);
+    assert.equal(useSynthStore.getState().motionRoutes.driveAmount.to, 0.25);
+    assert.equal(useSynthStore.getState().motionPlaying, false);
+    const next = startMotion();
+    assert.notEqual(run, next);
+    const before = useSynthStore.getState();
+    before.setMotionPlaybackPosition(1, 1, true, run);
+    assert.strictEqual(useSynthStore.getState(), before);
+    before.setMotionRouteEnabled("spaceMix", false);
+    assert.equal(useSynthStore.getState().motionPlaying, false);
+  });
+
+  it("does not play or audition when every destination is disabled", () => {
+    armMorph();
+    useSynthStore.getState().setMotionRouteEnabled("cycle", false);
+    const before = useSynthStore.getState();
+    before.playMotion();
+    before.auditionMotion(0.8);
+    assert.strictEqual(useSynthStore.getState(), before);
+  });
+
+  it("auditions effects from drawing and skips repeated flat effect writes", (t) => {
+    enableEffects();
+    const drive = t.mock.method(synth, "setDriveState", () => {});
+    const chorus = t.mock.method(synth, "setChorusMix", () => {});
+    const space = t.mock.method(synth, "setSpaceMix", () => {});
+    useSynthStore.getState().auditionMotion(0.4);
+    useSynthStore.getState().auditionMotion(0.4);
+    assert.equal(drive.mock.callCount(), 1);
+    assert.equal(chorus.mock.callCount(), 1);
+    assert.equal(space.mock.callCount(), 1);
+  });
+
+  it("keeps effect movement and Cycle sound equivalent across an A/B swap", (t) => {
+    armMorph();
+    enableEffects();
+    t.mock.method(synth, "setCycleMorph", () => {});
+    useSynthStore.getState().auditionMotion(0.3);
+    const before = useSynthStore.getState();
+    before.swapSlots();
+    useSynthStore.getState().auditionMotion(0.3);
+    const after = useSynthStore.getState();
+    assert.equal(after.morph, 0.7);
+    for (let i = 0; i < after.samples.length; i++) {
+      assert.ok(Math.abs(after.samples[i]! - before.samples[i]!) < 1e-12);
+    }
+    assert.equal(after.driveAmount, before.driveAmount);
+    assert.equal(after.chorusMix, before.chorusMix);
+    assert.equal(after.spaceMix, before.spaceMix);
+    assert.strictEqual(after.motionPath, before.motionPath);
   });
 });

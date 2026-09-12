@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { clampMotionEndpoint, mapMotionRoute } from "./motion-routing.ts";
 import {
   DEFAULT_MOTION_TIMING,
   MOTION_SIZE,
@@ -18,6 +19,16 @@ import {
 } from "./motion.ts";
 
 describe("MOTION path", () => {
+  it("maps reversed effect ranges and enforces the Drive ceiling at dispatch", () => {
+    assert.equal(mapMotionRoute("chorusMix", { enabled: true, from: 0.8, to: 0.2 }, 0), 0.8);
+    assert.ok(Math.abs(mapMotionRoute("chorusMix", { enabled: true, from: 0.8, to: 0.2 }, 1) - 0.2) < 1e-12);
+    for (const value of [-1, 0, 0.25, 0.5, 1, 2, NaN]) {
+      const result = mapMotionRoute("driveAmount", { enabled: true, from: -4, to: 4 }, value);
+      assert.ok(result >= 0 && result <= 0.25);
+    }
+    assert.equal(clampMotionEndpoint("driveAmount", 0.8), 0.25);
+    assert.equal(clampMotionEndpoint("spaceMix", NaN), 0);
+  });
   it("offers bounded loop-continuous shapes with a deliberately narrower Drift", () => {
     for (const { id } of MOTION_PRESETS) {
       const path = generateMotionPreset(id);

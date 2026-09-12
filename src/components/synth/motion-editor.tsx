@@ -11,6 +11,7 @@ import {
   sampleMotionPath,
 } from "@/lib/synth/motion";
 import { useSynthStore } from "@/lib/synth/store";
+import { hasPlayableMotionRoute } from "@/lib/synth/motion-routing";
 import { EditorTabs } from "./editor-tabs";
 
 const PAD_X = 44;
@@ -70,7 +71,7 @@ export function MotionEditor() {
   const motionProgress = useSynthStore((s) => s.motionProgress);
   const motionBpm = useSynthStore((s) => s.motionBpm);
   const motionBeats = useSynthStore((s) => s.motionBeats);
-  const armed = useSynthStore((s) => Boolean(s.slotA && s.slotB));
+  const armed = useSynthStore((s) => hasPlayableMotionRoute(s.motionRoutes, Boolean(s.slotA && s.slotB)));
   const setLiveMotionPath = useSynthStore((s) => s.setLiveMotionPath);
   const finishMotionGesture = useSynthStore((s) => s.finishMotionGesture);
   const auditionMotion = useSynthStore((s) => s.auditionMotion);
@@ -167,8 +168,8 @@ export function MotionEditor() {
     ctx.font = "11px 'IBM Plex Mono', ui-monospace, monospace";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText("B", 14, yAt(1));
-    ctx.fillText("A", 14, yAt(0));
+    ctx.fillText("100%", 6, yAt(1));
+    ctx.fillText("0%", 14, yAt(0));
     ctx.textBaseline = "top";
     ctx.fillText("0 s", PAD_X, PAD_Y + innerH + 8);
     ctx.textAlign = "right";
@@ -293,7 +294,7 @@ export function MotionEditor() {
         <EditorTabs />
         <div className="phosphor-editor-description">
           <span className="phosphor-editor-title">
-            Motion · A/B trajectory
+            Motion · shared automation
           </span>
         <span className="phosphor-editor-status-detail">
           {motionBeats} {motionBeats === 1 ? "beat" : "beats"} ·{" "}
@@ -308,11 +309,11 @@ export function MotionEditor() {
         onPointerMove={onPointerMove}
         onPointerUp={endDraw}
         onPointerCancel={endDraw}
-        aria-label="Draw A to B motion trajectory"
+        aria-label="Draw shared Motion automation"
         aria-disabled={!armed}
       />
         <p className="phosphor-editor-caption" aria-live="polite">
-          {armed ? "Choose a shape or draw the A/B blend. Select Loop to repeat; hold a note and press Play." : "In Cycle, set A, draw a different wave, then set B to use Motion"}
+          {armed ? "Choose a shape or draw automation. Select Loop to repeat; hold a note and press Play." : "Enable an effect destination below, or capture A and B in Cycle to automate their blend"}
         </p>
     </div>
   );

@@ -106,6 +106,37 @@ node scripts/export-standalone.mjs
 Open `dist/phosphor.html` directly in a browser. The export command fetches the
 existing Google Fonts assets once; the exported instrument needs no network.
 
+## Shared Motion destinations
+
+Motion now sends one sampled automation value to any combination of Cycle A/B,
+Drive Amount, Chorus wet mix, and Space wet mix. Each effect has a From/To range;
+reverse the endpoints for opposing movement. Cycle remains the only destination
+on by default. Effects-only Motion works without captured A/B waves.
+
+Try Breathe + Loop with Chorus 0–35% and Space 15–55%, hold a note, and press Play.
+Drift explores the middle 30–70% of each configured range. Drive automation is
+always bounded to 0–25%, even when Safe is off; it controls the existing transfer
+Amount, not a new wet/dry path. Choose a non-Identity Drive curve to hear it.
+
+Destination/range edits stop playback without immediately changing sound. Stop
+holds the last values. Moving a manually controlled amount/mix stops Motion only
+if that destination is enabled. Disabled destinations retain their current values.
+The direct A/B slider remains Cycle-only. A/B Swap reverses Cycle's route direction
+while preserving the shared path and its histories, so effects do not invert too.
+
+All destinations share the existing 30 Hz audio-clock-based playback controller.
+Chorus and Space use their existing smoothed gain controls; Drive updates its
+bounded transfer table. Flat effect frames skip redundant writes. Motion does not
+rebuild Space impulse responses, Chorus LFO tables, or held-note oscillators to
+animate effects. Full effect-shape interpolation and look-ahead transport remain
+outside this addition.
+
+Validation: 104 tests, typecheck, and production build pass. Coverage includes
+synchronized dispatch with/without A/B, reversed ranges and Drive caps, manual
+control priority, stop/late-tick rejection, history isolation, A/B Swap equivalence,
+and engine graph stability through repeated effect updates. No new browser audio
+or visual verification was performed in this pass.
+
 ## Motion continuity repair
 
 `fix/phase-continuous-motion` carries the selected Control Cabinet layout and
