@@ -83,13 +83,16 @@ selector, alternate layouts, and layout context have been removed. The four
 Figurestead treatments remain independent visual choices. Compact screens retain
 natural scrolling. The Registration Ink validation caveat above still applies.
 
-Motion includes four editable starting shapes: Sweep, Breathe, Drift, and Double
-Pulse. Breathe and Double Pulse travel the full A/B range; Drift stays within
-30–70%. Those three paths have matching endpoints for looping. Choose a shape,
-select Loop or Ping-pong if desired, hold a note, and press Play. Choosing a shape
-stops playback and creates one undoable Motion edit; it does not change the
-captured waves, timing settings, other histories, or the currently sounding blend.
-The repaired oscillator and gain-ramp implementation is unchanged.
+Motion includes four editable starting shapes: Sweep, Log, Exponential, and
+3:3:2. Log rises quickly and eases toward 100%; Exponential starts gently and
+accelerates toward 100%. Both are smooth, normalized curves spanning 0–100%.
+Like Sweep, they reset from 100% to 0% in Loop mode; choose Ping-pong to travel
+back along the curve instead. 3:3:2 makes three rounded pulses occupying 3/8,
+3/8, and 2/8 of the selected duration, with smooth joins and matching loop
+endpoints. At 8 beats that is 3 + 3 + 2 beats; at 4 beats, 1.5 + 1.5 + 1 beat.
+Choose a shape, hold a note, and press Play. Choosing a shape stops playback and
+creates one undoable Motion edit; it does not change captured waves, timing,
+other histories, or the current sound. The audio engine is unchanged.
 
 Cabinet graduation validation: all 94 tests, typecheck, and production build pass,
 including shape bounds, loop endpoints, undo/redo, stale playback rejection, and
@@ -113,8 +116,8 @@ Drive Amount, Chorus wet mix, and Space wet mix. Each effect has a From/To range
 reverse the endpoints for opposing movement. Cycle remains the only destination
 on by default. Effects-only Motion works without captured A/B waves.
 
-Try Breathe + Loop with Chorus 0–35% and Space 15–55%, hold a note, and press Play.
-Drift explores the middle 30–70% of each configured range. Drive automation is
+Try 3:3:2 + Loop with Chorus 0–35% and Space 15–55%, hold a note, and press Play.
+Use destination From/To endpoints to narrow the movement. Drive automation is
 always bounded to 0–25%, even when Safe is off; it controls the existing transfer
 Amount, not a new wet/dry path. Choose a non-Identity Drive curve to hear it.
 
