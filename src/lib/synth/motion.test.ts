@@ -29,21 +29,44 @@ describe("MOTION path", () => {
     assert.equal(clampMotionEndpoint("driveAmount", 0.8), 0.25);
     assert.equal(clampMotionEndpoint("spaceMix", NaN), 0);
   });
-  it("offers bounded loop-continuous shapes with a deliberately narrower Drift", () => {
+  it("offers four bounded editable shapes", () => {
+    assert.equal(MOTION_PRESETS.length, 4);
     for (const { id } of MOTION_PRESETS) {
       const path = generateMotionPreset(id);
       assert.equal(path.length, MOTION_SIZE);
       assert.ok(path.every(x => Number.isFinite(x) && x >= 0 && x <= 1));
-      if (id !== "sweep") assert.equal(path[0], path.at(-1));
-      if (id === "drift") {
-        assert.ok(Math.min(...path) >= 0.3);
-        assert.ok(Math.max(...path) <= 0.7);
-      }
+      assert.equal(path[0], 0);
+      assert.equal(path.at(-1), id === "pulse-332" ? 0 : 1);
     }
-    const pulse = generateMotionPreset("double-pulse");
-    assert.ok(sampleMotionPath(pulse, 0.25) > 0.999);
-    assert.ok(sampleMotionPath(pulse, 0.5) < 0.001);
-    assert.ok(sampleMotionPath(pulse, 0.75) > 0.999);
+  });
+
+  it("gives Log a fast rise and Exponential a slow rise without reversing", () => {
+    const log = generateMotionPreset("log");
+    const exp = generateMotionPreset("exponential");
+    assert.ok(sampleMotionPath(log, 0.5) > 0.8);
+    assert.ok(sampleMotionPath(exp, 0.5) < 0.2);
+    for (let i = 1; i < MOTION_SIZE - 1; i++) {
+      const t = i / (MOTION_SIZE - 1);
+      assert.ok(log[i]! > t && exp[i]! < t);
+      assert.ok(log[i]! > log[i - 1]! && exp[i]! > exp[i - 1]!);
+      assert.ok(log[i]! - log[i - 1]! > log[i + 1]! - log[i]!);
+      assert.ok(exp[i]! - exp[i - 1]! < exp[i + 1]! - exp[i]!);
+    }
+  });
+
+  it("spaces three smooth pulses in a 3:3:2 ratio with a continuous loop seam", () => {
+    const pulse = generateMotionPreset("pulse-332");
+    for (const t of [0, 3 / 8, 6 / 8, 1]) {
+      assert.ok(sampleMotionPath(pulse, t) < 0.001);
+    }
+    for (const t of [3 / 16, 9 / 16, 7 / 8]) {
+      assert.ok(sampleMotionPath(pulse, t) > 0.999);
+    }
+    const peaks = pulse.filter((v, i) => i > 0 && i < pulse.length - 1
+      && v > pulse[i - 1]! && v > pulse[i + 1]!);
+    assert.equal(peaks.length, 3);
+    assert.equal(pulse[0], pulse.at(-1));
+    assert.ok(pulse[1]! < 0.001 && pulse.at(-2)! < 0.001);
   });
 
   it("defaults to an exact A to B line", () => {

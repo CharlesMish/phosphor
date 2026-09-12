@@ -81,12 +81,12 @@ describe("MOTION store authority", () => {
     const before = useSynthStore.getState();
     const morph = t.mock.method(synth, "setCycleMorph", () => {});
     const wave = t.mock.method(synth, "setWaveform", () => {});
-    before.applyMotionPreset("breathe");
+    before.applyMotionPreset("log");
     const after = useSynthStore.getState();
     assert.equal(after.motionPlaying, false);
     assert.equal(after.motionProgress, 0);
     assert.equal(after.motionPast.length, before.motionPast.length + 1);
-    assert.deepEqual(after.motionPath, generateMotionPreset("breathe"));
+    assert.deepEqual(after.motionPath, generateMotionPreset("log"));
     assert.strictEqual(after.samples, before.samples);
     assert.strictEqual(after.slotA, before.slotA);
     assert.strictEqual(after.slotB, before.slotB);
@@ -99,18 +99,18 @@ describe("MOTION store authority", () => {
     after.undo();
     assert.deepEqual(useSynthStore.getState().motionPath, before.motionPath);
     useSynthStore.getState().redo();
-    assert.deepEqual(useSynthStore.getState().motionPath, generateMotionPreset("breathe"));
+    assert.deepEqual(useSynthStore.getState().motionPath, generateMotionPreset("log"));
     assert.equal(morph.mock.callCount(), 0);
     assert.equal(wave.mock.callCount(), 0);
   });
 
   it("preserves redo when the same Motion shape is chosen again", () => {
     useSynthStore.getState().setDomain("motion");
-    useSynthStore.getState().applyMotionPreset("breathe");
-    useSynthStore.getState().applyMotionPreset("drift");
+    useSynthStore.getState().applyMotionPreset("log");
+    useSynthStore.getState().applyMotionPreset("exponential");
     useSynthStore.getState().undo();
     const before = useSynthStore.getState();
-    before.applyMotionPreset("breathe");
+    before.applyMotionPreset("log");
     assert.strictEqual(useSynthStore.getState().motionPast, before.motionPast);
     assert.strictEqual(useSynthStore.getState().motionFuture, before.motionFuture);
   });

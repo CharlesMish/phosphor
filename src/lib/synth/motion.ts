@@ -14,22 +14,28 @@ export type MotionMode = (typeof MOTION_MODES)[number];
 export const DEFAULT_MOTION_MODE: MotionMode = "one-shot";
 
 export const MOTION_PRESETS = [
-  { id: "sweep", label: "Sweep", description: "Travel from A to B. Try Ping-pong to return." },
-  { id: "breathe", label: "Breathe", description: "A smooth journey from A to B and back. Loop for continuous movement." },
-  { id: "drift", label: "Drift", description: "A gentle return trip within the middle 30–70% of the blend." },
-  { id: "double-pulse", label: "Double Pulse", description: "Two smooth A/B excursions per path. Loop for a repeating pulse." },
+  { id: "sweep", label: "Sweep", description: "Rise evenly from 0 to 100%. Try Ping-pong to return." },
+  { id: "log", label: "Log", description: "Rise quickly, then ease toward 100%. Try Ping-pong for a return; Loop resets to 0%." },
+  { id: "exponential", label: "Exponential", description: "Start gently, then accelerate toward 100%. Try Ping-pong for a return; Loop resets to 0%." },
+  { id: "pulse-332", label: "3:3:2", description: "Three smooth pulses lasting 3/8, 3/8, and 2/8 of the selected duration. Loop for an offset rhythm." },
 ] as const;
 export type MotionPreset = (typeof MOTION_PRESETS)[number]["id"];
 
 export function generateMotionPreset(preset: MotionPreset): number[] {
   if (preset === "sweep") return createDefaultMotionPath();
-  const cycles = preset === "double-pulse" ? 2 : 1;
-  const depth = preset === "drift" ? 0.2 : 0.5;
-  const path = Array.from({ length: MOTION_SIZE }, (_, index) =>
-    0.5 - depth * Math.cos(2 * Math.PI * cycles * index / (MOTION_SIZE - 1)),
-  );
-  // Exact matching endpoints keep the authored loop seam continuous.
-  path[path.length - 1] = path[0]!;
+  const curvature = Math.log(32);
+  const path = Array.from({ length: MOTION_SIZE }, (_, index) => {
+    const t = index / (MOTION_SIZE - 1);
+    if (preset === "log") return Math.log1p(31 * t) / curvature;
+    if (preset === "exponential") return Math.expm1(curvature * t) / 31;
+    // Raised-cosine lobes meet at zero with zero slope, including the loop seam.
+    const phase = t < 3 / 8 ? t / (3 / 8)
+      : t < 6 / 8 ? (t - 3 / 8) / (3 / 8)
+      : (t - 6 / 8) / (2 / 8);
+    return 0.5 - 0.5 * Math.cos(2 * Math.PI * phase);
+  });
+  path[0] = 0;
+  path[path.length - 1] = preset === "pulse-332" ? 0 : 1;
   return path;
 }
 
