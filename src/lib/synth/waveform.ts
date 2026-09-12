@@ -164,6 +164,26 @@ export function lerpWaves(a: number[], b: number[], t: number): number[] {
   return out;
 }
 
+/**
+ * Condition the two authored endpoints independently, then preserve their
+ * honest linear relationship at every intermediate position. In particular,
+ * identical endpoints remain identical and opposite endpoints cancel at 0.5.
+ */
+export function lerpConditionedWaves(
+  a: number[],
+  b: number[],
+  t: number,
+  target = 0.92,
+): number[] {
+  const u = Math.min(1, Math.max(0, t));
+  const conditionedA = normalizeWave(a, target);
+  if (!wavesDiffer(a, b)) return conditionedA;
+  const conditionedB = normalizeWave(b, target);
+  if (u <= 0) return conditionedA;
+  if (u >= 1) return conditionedB;
+  return lerpWaves(conditionedA, conditionedB, u);
+}
+
 export function wavesDiffer(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return true;
   for (let i = 0; i < a.length; i++) {

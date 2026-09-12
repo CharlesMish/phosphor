@@ -1,10 +1,14 @@
 import { create } from "zustand";
-import { synth, type SynthParams } from "./engine";
+import {
+  OSCILLATOR_SAMPLE_TARGET,
+  cycleMorphSamples,
+  synth,
+  type SynthParams,
+} from "./engine";
 import {
   cloneWave,
   generatePreset,
   invertWave,
-  lerpWaves,
   mirrorWave,
   normalizeWave,
   smoothWave,
@@ -241,10 +245,7 @@ function pushSpacePast(past: SpaceSnap[], snap: SpaceSnap): SpaceSnap[] {
 }
 
 function morphSamples(slotA: number[], slotB: number[], t: number): number[] {
-  const u = Math.min(1, Math.max(0, t));
-  if (u <= 0) return cloneWave(slotA);
-  if (u >= 1) return cloneWave(slotB);
-  return normalizeWave(lerpWaves(slotA, slotB, u), 0.92);
+  return cycleMorphSamples(slotA, slotB, t);
 }
 
 function applySpace(contour: number[], seed: number, metal: boolean, seconds: number) {
@@ -274,7 +275,9 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
     const u = Math.min(1, Math.max(0, t));
     const samples = morphSamples(slotA, slotB, u);
     const recordCycleHistory = source === "manual";
-    const reengage = recordCycleHistory && !morphLive && wavesDiffer(prev, samples);
+    const reengage =
+      recordCycleHistory && !morphLive &&
+      wavesDiffer(normalizeWave(prev, OSCILLATOR_SAMPLE_TARGET), samples);
     set({
       morph: u,
       samples,
@@ -285,7 +288,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
       ...(reengage ? { past: pushPast(get().past, prev), future: [] } : {}),
       ...motionState,
     });
-    synth.setWaveform(samples, immediate);
+    synth.setCycleMorph(slotA, slotB, u, immediate);
     return true;
   };
 

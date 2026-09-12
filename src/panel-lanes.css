@@ -1,0 +1,193 @@
+/* Panel studies change composition, never treatment colors or instrument state. */
+.phosphor-lane-picker {
+  max-width: 88rem;
+  margin: 0 auto;
+  padding: 1.125rem 1.25rem 0;
+}
+
+.phosphor-lane-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.625rem;
+  font: 0.75rem/1.4 var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--ph-text-muted);
+}
+
+.phosphor-lane-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.phosphor-lane-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ph-border);
+  border-radius: 0.5rem;
+  text-align: left;
+  color: var(--ph-text-muted);
+  background: var(--ph-field);
+}
+
+.phosphor-lane-option > svg { flex: none; }
+.phosphor-lane-option:hover { border-color: var(--ph-border-strong); color: var(--ph-text); }
+.phosphor-lane-option:focus-visible { outline: 2px solid var(--ph-focus); outline-offset: 3px; }
+.phosphor-lane-option[aria-pressed="true"] {
+  color: var(--ph-active);
+  background: var(--ph-active-soft);
+  border-color: var(--ph-trace-secondary);
+}
+
+.phosphor-lane-name { font-size: 0.9375rem; line-height: 1.4; }
+.phosphor-lane-number { margin-right: 0.5rem; font: 0.75rem var(--font-mono); opacity: 0.8; }
+.phosphor-lane-name small { display: block; margin-top: 0.1875rem; font-size: 0.75rem; color: var(--ph-text-muted); }
+.phosphor-lane-description { min-height: 2.25rem; padding: 0.625rem 0.125rem 0; font-size: 0.8125rem; line-height: 1.5; color: var(--ph-text-muted); }
+
+[data-phosphor-panel] .phosphor-shell {
+  min-height: 0;
+  height: auto;
+  margin-bottom: 1.25rem;
+}
+
+[data-phosphor-panel] .phosphor-editor-canvas {
+  height: clamp(14rem, 35dvh, 26rem);
+  min-height: 14rem;
+}
+
+[data-phosphor-panel] .phosphor-piano { height: 7.5rem; }
+[data-phosphor-panel] .phosphor-editor-description { font-size: 0.75rem; }
+
+/* 01 / BENCH — two quiet compartments inside one instrument frame. */
+[data-phosphor-panel="bench"] .phosphor-shell {
+  width: calc(100% - 2.5rem);
+  max-width: 85.5rem;
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--ph-border-strong);
+  border-radius: 1.125rem;
+  background: var(--ph-surface);
+}
+
+[data-phosphor-panel="bench"] .phosphor-heading {
+  border-bottom: 1px solid var(--ph-border);
+  padding: 0 0.25rem 0.75rem;
+}
+
+[data-phosphor-panel="bench"] .phosphor-drawing,
+[data-phosphor-panel="bench"] .phosphor-output {
+  gap: 0;
+  border: 1px solid var(--ph-border-strong);
+  border-radius: 0.625rem;
+  background: var(--ph-plot);
+}
+
+[data-phosphor-panel="bench"] .phosphor-editor,
+[data-phosphor-panel="bench"] .phosphor-editor-tools,
+[data-phosphor-panel="bench"] .phosphor-domain-controls > div,
+[data-phosphor-panel="bench"] .phosphor-output > * {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+[data-phosphor-panel="bench"] .phosphor-editor,
+[data-phosphor-panel="bench"] .phosphor-scope { border-radius: 0.625rem 0.625rem 0 0; }
+[data-phosphor-panel="bench"] .phosphor-editor-tools { border-top: 1px solid var(--ph-border); background: var(--ph-surface-raised); }
+[data-phosphor-panel="bench"] .phosphor-domain-controls > div { border-top: 1px solid var(--ph-border); border-radius: 0 0 0.625rem 0.625rem; }
+[data-phosphor-panel="bench"] .phosphor-envelope,
+[data-phosphor-panel="bench"] .phosphor-effects { border-top: 1px solid var(--ph-border); }
+[data-phosphor-panel="bench"] .phosphor-effects { border-radius: 0 0 0.625rem 0.625rem; }
+[data-phosphor-panel="bench"] .phosphor-keyboard { border: 1px solid var(--ph-border-strong); border-radius: 0.625rem; box-shadow: none; background: var(--ph-surface-raised); }
+
+/* 02 / SIGNAL DESK — the plot spans the instrument, above a horizontal rack. */
+[data-phosphor-panel="desk"] .phosphor-shell { max-width: 88rem; gap: 0.75rem; }
+[data-phosphor-panel="desk"] .phosphor-wordmark { font-size: 1.625rem; letter-spacing: -0.055em; }
+[data-phosphor-panel="desk"] .phosphor-heading { padding: 0.125rem 0 0.5rem; border-bottom: 1px solid var(--ph-border-strong); }
+[data-phosphor-panel="desk"] .phosphor-workspace { display: flex; flex-direction: column; gap: 0.75rem; }
+[data-phosphor-panel="desk"] .phosphor-editor { border-radius: 0.25rem; box-shadow: none; border-block: 1px solid var(--ph-border-strong); }
+[data-phosphor-panel="desk"] .phosphor-editor-head { padding: 0.5rem 0.75rem 0; }
+[data-phosphor-panel="desk"] .phosphor-editor-canvas { height: clamp(14rem, 29dvh, 23rem); }
+[data-phosphor-panel="desk"] .phosphor-editor-tools,
+[data-phosphor-panel="desk"] .phosphor-domain-controls > div { border-radius: 0.25rem; box-shadow: none; background: var(--ph-surface); }
+[data-phosphor-panel="desk"] .phosphor-keyboard { border-radius: 0.25rem; box-shadow: none; border-top: 1px solid var(--ph-border-strong); }
+[data-phosphor-panel="desk"] .phosphor-output { gap: 1px; background: var(--ph-border-strong); border: 1px solid var(--ph-border-strong); border-radius: 0.25rem; }
+[data-phosphor-panel="desk"] .phosphor-output > * { border-radius: 0; box-shadow: none; }
+
+/* 03 / CONTROL CABINET — left-hand plot, right-hand controls, square divisions. */
+[data-phosphor-panel="cabinet"] .phosphor-shell {
+  width: calc(100% - 2.5rem);
+  max-width: 85.5rem;
+  margin-top: 0.75rem;
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--ph-border-strong);
+  background: var(--ph-surface);
+}
+
+[data-phosphor-panel="cabinet"] .phosphor-heading { padding: 1rem; border-bottom: 1px solid var(--ph-border-strong); }
+[data-phosphor-panel="cabinet"] .phosphor-wordmark { font-family: var(--font-mono); font-size: 1.125rem; text-transform: uppercase; letter-spacing: 0.1em; }
+[data-phosphor-panel="cabinet"] .phosphor-workspace { padding: 0.75rem; }
+[data-phosphor-panel="cabinet"] .phosphor-drawing { gap: 0; border: 1px solid var(--ph-border-strong); }
+[data-phosphor-panel="cabinet"] .phosphor-editor,
+[data-phosphor-panel="cabinet"] .phosphor-editor-tools,
+[data-phosphor-panel="cabinet"] .phosphor-domain-controls > div,
+[data-phosphor-panel="cabinet"] .phosphor-output > *,
+[data-phosphor-panel="cabinet"] .phosphor-keyboard { border-radius: 0; box-shadow: none; }
+[data-phosphor-panel="cabinet"] .phosphor-editor-head { padding: 0.75rem 0.75rem 0; }
+[data-phosphor-panel="cabinet"] .phosphor-editor-tools,
+[data-phosphor-panel="cabinet"] .phosphor-domain-controls > div { border-top: 1px solid var(--ph-border-strong); }
+[data-phosphor-panel="cabinet"] .phosphor-output { gap: 0; background: var(--ph-surface); }
+[data-phosphor-panel="cabinet"] .phosphor-envelope,
+[data-phosphor-panel="cabinet"] .phosphor-effects { border-top: 1px solid var(--ph-border-strong); }
+[data-phosphor-panel="cabinet"] .phosphor-effects-list { gap: 0; }
+[data-phosphor-panel="cabinet"] .phosphor-effects-list button { border-radius: 0; border-bottom: 1px solid var(--ph-border); background: transparent; padding-block: 0.75rem; }
+[data-phosphor-panel="cabinet"] .phosphor-effects-list button[aria-pressed="true"] { background: var(--ph-active-soft); }
+[data-phosphor-panel="cabinet"] .phosphor-keyboard { padding: 0.75rem; border-top: 1px solid var(--ph-border-strong); }
+
+@media (min-width: 64rem) {
+  [data-phosphor-panel="bench"] .phosphor-workspace { grid-template-columns: minmax(0, 1fr) 16rem; }
+  [data-phosphor-panel="bench"] .phosphor-output { align-content: start; }
+  [data-phosphor-panel="bench"] .phosphor-scope canvas { height: 8rem; }
+  [data-phosphor-panel="desk"] .phosphor-drawing { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 0.5rem; }
+  [data-phosphor-panel="desk"] .phosphor-editor { grid-column: 1 / -1; }
+  [data-phosphor-panel="desk"] .phosphor-domain-controls { display: flex; }
+  [data-phosphor-panel="desk"] .phosphor-domain-controls > div { flex: 1; align-content: center; }
+  [data-phosphor-panel="desk"] .phosphor-editor-tools { display: flex; align-items: center; }
+  [data-phosphor-panel="desk"] .phosphor-output { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) minmax(0, 1fr); }
+  [data-phosphor-panel="desk"] .phosphor-envelope { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: center; gap: 0.75rem; }
+  [data-phosphor-panel="desk"] .phosphor-effects { grid-column: auto; }
+  [data-phosphor-panel="desk"] .phosphor-effects-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  [data-phosphor-panel="desk"] .phosphor-effects-list button { flex-direction: column; align-items: start; gap: 0.375rem; }
+  [data-phosphor-panel="desk"] .phosphor-scope canvas { height: 7rem; }
+  [data-phosphor-panel="cabinet"] .phosphor-shell { display: grid; grid-template-columns: minmax(0, 1fr) 16rem; }
+  [data-phosphor-panel="cabinet"] .phosphor-heading { grid-column: 2; grid-row: 1; border-left: 1px solid var(--ph-border-strong); }
+  [data-phosphor-panel="cabinet"] .phosphor-heading header { gap: 1rem; }
+  [data-phosphor-panel="cabinet"] .phosphor-workspace { display: contents; }
+  [data-phosphor-panel="cabinet"] .phosphor-drawing { grid-column: 1; grid-row: 1 / span 2; border: 0; }
+  [data-phosphor-panel="cabinet"] .phosphor-output { grid-column: 2; grid-row: 2; border-left: 1px solid var(--ph-border-strong); }
+  [data-phosphor-panel="cabinet"] .phosphor-scope canvas { height: 6.5rem; }
+  [data-phosphor-panel="cabinet"] .phosphor-envelope { gap: 0.25rem; }
+  [data-phosphor-panel="cabinet"] .phosphor-keyboard { grid-column: 1 / -1; grid-row: 3; }
+  [data-phosphor-panel="cabinet"] .phosphor-editor-canvas { height: clamp(17rem, 40dvh, 29rem); }
+}
+
+@media (max-width: 39.999rem) {
+  .phosphor-lane-picker { padding: 0.75rem 0.75rem 0; }
+  .phosphor-lane-heading { font-size: 0.75rem; }
+  .phosphor-lane-options { gap: 0.375rem; }
+  .phosphor-lane-option { padding: 0.625rem 0.375rem; flex-direction: column; align-items: start; gap: 0.375rem; }
+  .phosphor-lane-option > svg { width: 36px; height: 27px; }
+  .phosphor-lane-name { font-size: 0.8125rem; }
+  .phosphor-lane-number { display: block; margin-bottom: 0.125rem; }
+  .phosphor-lane-name small, .phosphor-lane-note { display: none; }
+  .phosphor-lane-description { min-height: 3.75rem; }
+  [data-phosphor-panel="bench"] .phosphor-shell { width: calc(100% - 1.5rem); padding: 0.625rem; }
+  [data-phosphor-panel="cabinet"] .phosphor-shell { width: calc(100% - 1.5rem); }
+  [data-phosphor-panel] .phosphor-editor-canvas { min-height: 12rem; height: 15rem; }
+  [data-phosphor-panel] .phosphor-piano { height: 6.5rem; }
+}

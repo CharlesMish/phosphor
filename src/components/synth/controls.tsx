@@ -182,7 +182,7 @@ export function SideParams() {
   const setParam = useSynthStore((s) => s.setParam);
 
   return (
-    <div className="grid grid-cols-3 gap-2 rounded-lg bg-surface p-3 shadow-border lg:flex lg:flex-col lg:gap-3">
+    <div className="phosphor-envelope grid grid-cols-3 gap-2 rounded-lg bg-surface p-3 shadow-border lg:flex lg:flex-col lg:gap-3">
       <Param
         label="Attack"
         value={attack}
@@ -590,7 +590,7 @@ export function KeyboardControls() {
   const setParam = useSynthStore((s) => s.setParam);
 
   return (
-    <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+    <div className="phosphor-keyboard-controls mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
       <div className="flex items-center gap-1">
         <Button variant="subtle" size="icon" className="size-9" aria-label="Octave down" onClick={() => setOctave(octave - 1)} disabled={octave <= -2}>
           <Minus className="size-4" aria-hidden />
