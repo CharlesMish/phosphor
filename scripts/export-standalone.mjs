@@ -2,9 +2,9 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Run after npm run build. Keep the comparison playable from a single local file.
+// Run after npm run build. Keep the instrument playable from a single local file.
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const destination = resolve(process.argv[2] || resolve(project, "dist/phosphor-panel-lanes.html"));
+const destination = resolve(process.argv[2] || resolve(project, "dist/phosphor.html"));
 let html = await readFile(resolve(project, "dist/index.html"), "utf8");
 const script = html.match(/<script\b[^>]*src="([^"]+)"[^>]*><\/script>/);
 const style = html.match(/<link\b[^>]*href="([^"]+\.css)"[^>]*>/);
@@ -33,7 +33,6 @@ if (fontLink) {
   html = html.replace(fontLink[0], () => `<style>${fontCss}</style>`);
   html = html.replace(/\s*<link[^>]*rel="preconnect"[^>]*>/g, "");
 }
-html = html.replace("<title>Phosphor</title>", "<title>Phosphor — three panel studies</title>");
 await mkdir(dirname(destination), { recursive: true });
 await writeFile(destination, html);
 console.log(`Saved ${destination} (${Buffer.byteLength(html)} bytes)`);

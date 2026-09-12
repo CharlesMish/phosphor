@@ -75,36 +75,67 @@ repeat, focus/window loss, and effect summaries/navigation. This is not a claim
 of browser visual validation; compact/tablet rendering, 200% zoom, and treatment
 switching still need a browser review before merging this baseline.
 
-## Panel design study
+## Control Cabinet
 
-The `study/panel-design-lanes` branch compares three playable panel layouts:
+Control Cabinet is the instrument's sole layout: main graph on the left, control
+rack on the right, square divisions, and a full-width keyboard. The layout-study
+selector, alternate layouts, and layout context have been removed. The four
+Figurestead treatments remain independent visual choices. Compact screens retain
+natural scrolling. The Registration Ink validation caveat above still applies.
 
-- **Bench** joins drawing and editing into one framed instrument with a quiet right-hand rack.
-- **Signal Desk** uses a full-width plot above a horizontal output/settings band.
-- **Control Cabinet** uses square compartments with the main plot on the left and a control rack on the right. It is the selected default.
+Motion includes four editable starting shapes: Sweep, Breathe, Drift, and Double
+Pulse. Breathe and Double Pulse travel the full A/B range; Drift stays within
+30–70%. Those three paths have matching endpoints for looping. Choose a shape,
+select Loop or Ping-pong if desired, hold a note, and press Play. Choosing a shape
+stops playback and creates one undoable Motion edit; it does not change the
+captured waves, timing settings, other histories, or the currently sounding blend.
+The repaired oscillator and gain-ramp implementation is unchanged.
 
-The layout selector and the Figurestead treatment selector are independent.
-Each lane uses the same mounted instrument and audio state; switching layouts
-preserves drawings, A/B captures, settings, and undo history. Compact screens
-retain natural page scrolling. The Registration Ink validation caveat above
-continues to apply.
+Cabinet graduation validation: all 94 tests, typecheck, and production build pass,
+including shape bounds, loop endpoints, undo/redo, stale playback rejection, and
+sound preservation. Browser visual validation was not performed in this pass.
 
-Build a single downloadable comparison file with embedded application code,
-styles, fonts, and favicon:
+Build a single downloadable instrument with embedded code, styles, fonts, and
+favicon:
 
 ```bash
 npm run build
 node scripts/export-standalone.mjs
 ```
 
-Open `dist/phosphor-panel-lanes.html` directly in a browser. The export command
-fetches the existing Google Fonts assets once; the exported instrument itself
-needs no network. This branch is a design study, not a replacement of the
-playable main baseline.
+Open `dist/phosphor.html` directly in a browser. The export command fetches the
+existing Google Fonts assets once; the exported instrument needs no network.
 
-Typecheck/build and a DOM regression probe for layout/state preservation passed.
-The DOM probe checks node identity, synth data/history, no panic on lane change,
-and independent treatment selection; it does not validate browser geometry.
+## Shared Motion destinations
+
+Motion now sends one sampled automation value to any combination of Cycle A/B,
+Drive Amount, Chorus wet mix, and Space wet mix. Each effect has a From/To range;
+reverse the endpoints for opposing movement. Cycle remains the only destination
+on by default. Effects-only Motion works without captured A/B waves.
+
+Try Breathe + Loop with Chorus 0–35% and Space 15–55%, hold a note, and press Play.
+Drift explores the middle 30–70% of each configured range. Drive automation is
+always bounded to 0–25%, even when Safe is off; it controls the existing transfer
+Amount, not a new wet/dry path. Choose a non-Identity Drive curve to hear it.
+
+Destination/range edits stop playback without immediately changing sound. Stop
+holds the last values. Moving a manually controlled amount/mix stops Motion only
+if that destination is enabled. Disabled destinations retain their current values.
+The direct A/B slider remains Cycle-only. A/B Swap reverses Cycle's route direction
+while preserving the shared path and its histories, so effects do not invert too.
+
+All destinations share the existing 30 Hz audio-clock-based playback controller.
+Chorus and Space use their existing smoothed gain controls; Drive updates its
+bounded transfer table. Flat effect frames skip redundant writes. Motion does not
+rebuild Space impulse responses, Chorus LFO tables, or held-note oscillators to
+animate effects. Full effect-shape interpolation and look-ahead transport remain
+outside this addition.
+
+Validation: 104 tests, typecheck, and production build pass. Coverage includes
+synchronized dispatch with/without A/B, reversed ranges and Drive caps, manual
+control priority, stop/late-tick rejection, history isolation, A/B Swap equivalence,
+and engine graph stability through repeated effect updates. No new browser audio
+or visual verification was performed in this pass.
 
 ## Motion continuity repair
 

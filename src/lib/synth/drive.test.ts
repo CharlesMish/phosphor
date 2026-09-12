@@ -627,6 +627,29 @@ describe("CYCLE morph normalization diagnosis", () => {
 });
 
 describe("phase-coherent CYCLE morph runtime", () => {
+  it("keeps the audio graph and held oscillators intact during effect amount automation", () => {
+    withTestEngine((engine, context, timers) => {
+      engine.setWaveform(generatePreset("sine"), true);
+      engine.noteOn(60);
+      const oscillators = context.oscillators.slice();
+      const waves = context.periodicWaves.slice();
+      const buffers = context.convolvers.map(node => node.buffer);
+      const curve = generateDrivePreset("soft");
+      for (let frame = 0; frame <= 60; frame++) {
+        context.currentTime = frame / 30;
+        const value = 0.5 - 0.5 * Math.cos(frame / 60 * Math.PI * 2);
+        engine.setDriveState(curve, value * 0.25, true);
+        engine.setChorusMix(value * 0.35);
+        engine.setSpaceMix(0.15 + value * 0.4);
+      }
+      assert.deepEqual(context.oscillators, oscillators);
+      assert.deepEqual(context.periodicWaves, waves);
+      assert.deepEqual(context.convolvers.map(node => node.buffer), buffers);
+      assert.ok(context.oscillators.every(osc => !osc.stopped));
+      assert.equal(timers.size, 0, "Motion amount frames do not spawn SAFE re-entry timer ramps");
+    });
+  });
+
   it("does not restart a ramp on repeated flat Motion ticks", () => {
     withTestEngine((engine, context) => {
       const a = generatePreset("sine");

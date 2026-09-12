@@ -3,8 +3,6 @@ import { synth } from "@/lib/synth/engine";
 import { useSynthStore } from "@/lib/synth/store";
 import { midiFromCode } from "@/lib/synth/keyboard-map";
 import { useTreatment } from "@/lib/presentation/treatment";
-import { usePanel } from "@/lib/presentation/panel";
-import { PanelSelector } from "./panel-selector";
 import { isEditableTarget } from "@/lib/utils";
 import { WaveformEditor } from "./waveform-editor";
 import { MotionEditor } from "./motion-editor";
@@ -39,7 +37,6 @@ export function PhosphorApp() {
   const setAudioReady = useSynthStore((s) => s.setAudioReady);
   const domain = useSynthStore((s) => s.domain);
   const { treatment } = useTreatment();
-  const { panel } = usePanel();
 
   useEffect(() => {
     const unvoice = synth.onVoices(setActiveNotes);
@@ -144,13 +141,11 @@ export function PhosphorApp() {
   return (
     <div
       data-phosphor-treatment={treatment}
-      data-phosphor-panel={panel}
       className="phosphor-app bg-bg text-fg"
       tabIndex={0}
       onPointerDown={() => synth.unlock()}
     >
       <MotionPlaybackController />
-      <PanelSelector />
       <main className="phosphor-shell">
         <div className="phosphor-heading shrink-0">
           <HeaderBar />

@@ -1,0 +1,63 @@
+.phosphor-app .phosphor-shell {
+  min-height: 0;
+  height: auto;
+  margin-bottom: 1.25rem;
+}
+
+.phosphor-app .phosphor-editor-canvas {
+  height: clamp(14rem, 35dvh, 26rem);
+  min-height: 14rem;
+}
+
+.phosphor-app .phosphor-piano { height: 7.5rem; }
+.phosphor-app .phosphor-editor-description { font-size: 0.75rem; }
+
+/* CONTROL CABINET — left-hand plot, right-hand controls, square divisions. */
+.phosphor-app .phosphor-shell {
+  width: calc(100% - 2.5rem);
+  max-width: 85.5rem;
+  margin-top: 0.75rem;
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--ph-border-strong);
+  background: var(--ph-surface);
+}
+
+.phosphor-app .phosphor-heading { padding: 1rem; border-bottom: 1px solid var(--ph-border-strong); }
+.phosphor-app .phosphor-wordmark { font-family: var(--font-mono); font-size: 1.125rem; text-transform: uppercase; letter-spacing: 0.1em; }
+.phosphor-app .phosphor-workspace { padding: 0.75rem; }
+.phosphor-app .phosphor-drawing { gap: 0; border: 1px solid var(--ph-border-strong); }
+.phosphor-app .phosphor-editor,
+.phosphor-app .phosphor-editor-tools,
+.phosphor-app .phosphor-domain-controls > div,
+.phosphor-app .phosphor-output > *,
+.phosphor-app .phosphor-keyboard { border-radius: 0; box-shadow: none; }
+.phosphor-app .phosphor-editor-head { padding: 0.75rem 0.75rem 0; }
+.phosphor-app .phosphor-editor-tools,
+.phosphor-app .phosphor-domain-controls > div { border-top: 1px solid var(--ph-border-strong); }
+.phosphor-app .phosphor-output { gap: 0; background: var(--ph-surface); }
+.phosphor-app .phosphor-envelope,
+.phosphor-app .phosphor-effects { border-top: 1px solid var(--ph-border-strong); }
+.phosphor-app .phosphor-effects-list { gap: 0; }
+.phosphor-app .phosphor-effects-list button { border-radius: 0; border-bottom: 1px solid var(--ph-border); background: transparent; padding-block: 0.75rem; }
+.phosphor-app .phosphor-effects-list button[aria-pressed="true"] { background: var(--ph-active-soft); }
+.phosphor-app .phosphor-keyboard { padding: 0.75rem; border-top: 1px solid var(--ph-border-strong); }
+
+@media (min-width: 64rem) {
+  .phosphor-app .phosphor-shell { display: grid; grid-template-columns: minmax(0, 1fr) 16rem; }
+  .phosphor-app .phosphor-heading { grid-column: 2; grid-row: 1; border-left: 1px solid var(--ph-border-strong); }
+  .phosphor-app .phosphor-heading header { gap: 1rem; }
+  .phosphor-app .phosphor-workspace { display: contents; }
+  .phosphor-app .phosphor-drawing { grid-column: 1; grid-row: 1 / span 2; border: 0; }
+  .phosphor-app .phosphor-output { grid-column: 2; grid-row: 2; border-left: 1px solid var(--ph-border-strong); }
+  .phosphor-app .phosphor-scope canvas { height: 6.5rem; }
+  .phosphor-app .phosphor-envelope { gap: 0.25rem; }
+  .phosphor-app .phosphor-keyboard { grid-column: 1 / -1; grid-row: 3; }
+  .phosphor-app .phosphor-editor-canvas { height: clamp(17rem, 40dvh, 29rem); }
+}
+
+@media (max-width: 39.999rem) {
+  .phosphor-app .phosphor-shell { width: calc(100% - 1.5rem); }
+  .phosphor-app .phosphor-editor-canvas { min-height: 12rem; height: 15rem; }
+  .phosphor-app .phosphor-piano { height: 6.5rem; }
+}

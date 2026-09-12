@@ -13,6 +13,26 @@ export const MOTION_MODES = ["one-shot", "loop", "ping-pong"] as const;
 export type MotionMode = (typeof MOTION_MODES)[number];
 export const DEFAULT_MOTION_MODE: MotionMode = "one-shot";
 
+export const MOTION_PRESETS = [
+  { id: "sweep", label: "Sweep", description: "Travel from A to B. Try Ping-pong to return." },
+  { id: "breathe", label: "Breathe", description: "A smooth journey from A to B and back. Loop for continuous movement." },
+  { id: "drift", label: "Drift", description: "A gentle return trip within the middle 30–70% of the blend." },
+  { id: "double-pulse", label: "Double Pulse", description: "Two smooth A/B excursions per path. Loop for a repeating pulse." },
+] as const;
+export type MotionPreset = (typeof MOTION_PRESETS)[number]["id"];
+
+export function generateMotionPreset(preset: MotionPreset): number[] {
+  if (preset === "sweep") return createDefaultMotionPath();
+  const cycles = preset === "double-pulse" ? 2 : 1;
+  const depth = preset === "drift" ? 0.2 : 0.5;
+  const path = Array.from({ length: MOTION_SIZE }, (_, index) =>
+    0.5 - depth * Math.cos(2 * Math.PI * cycles * index / (MOTION_SIZE - 1)),
+  );
+  // Exact matching endpoints keep the authored loop seam continuous.
+  path[path.length - 1] = path[0]!;
+  return path;
+}
+
 export type MotionTiming = Readonly<{
   bpm: number;
   beats: MotionBeats;
