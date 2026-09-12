@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { TreatmentSelector } from "./treatment-selector";
+import { MotionShapes } from "./motion-shapes";
 import {
   useSynthStore,
   type DrivePreset,
@@ -290,6 +291,8 @@ export function PresetBar() {
 
   if (domain === "motion") {
     return (
+      <div className="grid gap-3">
+        <MotionShapes />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-faint">
@@ -387,6 +390,7 @@ export function PresetBar() {
             Redo
           </Button>
         </div>
+      </div>
       </div>
     );
   }

@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   DEFAULT_MOTION_TIMING,
   MOTION_SIZE,
+  MOTION_PRESETS,
+  generateMotionPreset,
   beatDurationSeconds,
   clampMotionBpm,
   clampMotionPath,
@@ -16,6 +18,23 @@ import {
 } from "./motion.ts";
 
 describe("MOTION path", () => {
+  it("offers bounded loop-continuous shapes with a deliberately narrower Drift", () => {
+    for (const { id } of MOTION_PRESETS) {
+      const path = generateMotionPreset(id);
+      assert.equal(path.length, MOTION_SIZE);
+      assert.ok(path.every(x => Number.isFinite(x) && x >= 0 && x <= 1));
+      if (id !== "sweep") assert.equal(path[0], path.at(-1));
+      if (id === "drift") {
+        assert.ok(Math.min(...path) >= 0.3);
+        assert.ok(Math.max(...path) <= 0.7);
+      }
+    }
+    const pulse = generateMotionPreset("double-pulse");
+    assert.ok(sampleMotionPath(pulse, 0.25) > 0.999);
+    assert.ok(sampleMotionPath(pulse, 0.5) < 0.001);
+    assert.ok(sampleMotionPath(pulse, 0.75) > 0.999);
+  });
+
   it("defaults to an exact A to B line", () => {
     const path = createDefaultMotionPath();
     assert.equal(path.length, MOTION_SIZE);

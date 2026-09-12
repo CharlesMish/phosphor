@@ -312,7 +312,7 @@ export function MotionEditor() {
         aria-disabled={!armed}
       />
         <p className="phosphor-editor-caption" aria-live="polite">
-          {armed ? "Drag to draw the A/B blend over time" : "In Cycle, set A, draw a different wave, then set B to use Motion"}
+          {armed ? "Choose a shape or draw the A/B blend. Select Loop to repeat; hold a note and press Play." : "In Cycle, set A, draw a different wave, then set B to use Motion"}
         </p>
     </div>
   );

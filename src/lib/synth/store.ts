@@ -53,10 +53,12 @@ import {
   cloneMotionPath,
   complementMotionPath,
   createDefaultMotionPath,
+  generateMotionPreset,
   motionPathsDiffer,
   sampleMotionPath,
   type MotionBeats,
   type MotionMode,
+  type MotionPreset,
 } from "./motion";
 
 export type { WavePreset, SpacePreset, DrivePreset, ChorusPreset };
@@ -154,6 +156,7 @@ type SynthActions = {
   setMorph: (t: number, immediate?: boolean) => void;
   auditionMotion: (t: number, immediate?: boolean) => void;
   setLiveMotionPath: (path: number[]) => void;
+  applyMotionPreset: (preset: MotionPreset) => void;
   finishMotionGesture: (before: number[], after: number[]) => void;
   playMotion: () => void;
   stopMotion: () => void;
@@ -579,6 +582,19 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
 
   setLiveMotionPath: (path) => {
     set({ motionPath: path });
+  },
+
+  applyMotionPreset: (preset) => {
+    const { motionPath, motionPast } = get();
+    const next = generateMotionPreset(preset);
+    set({
+      motionPlaying: false,
+      motionProgress: 0,
+      motionPath: next,
+      ...(motionPathsDiffer(motionPath, next)
+        ? { motionPast: pushMotionPast(motionPast, motionPath), motionFuture: [] }
+        : {}),
+    });
   },
 
   finishMotionGesture: (before, after) => {
