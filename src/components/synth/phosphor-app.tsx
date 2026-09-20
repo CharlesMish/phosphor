@@ -8,6 +8,8 @@ import { WaveformEditor } from "./waveform-editor";
 import { MotionEditor } from "./motion-editor";
 import { MotionPlaybackController } from "./motion-playback";
 import { Oscilloscope } from "./oscilloscope";
+import { NoteLooperControls } from "./note-looper";
+import { connectLooperTempo, panicPerformance, performanceInput } from "@/lib/synth/looper-runtime";
 import { Piano } from "./piano";
 import { HeaderBar, KeyboardControls, PresetBar, SideParams } from "./controls";
 import { EffectsSummary } from "./effects-summary";
@@ -72,8 +74,15 @@ export function PhosphorApp() {
 
   useEffect(() => {
     const held = new Map<string, number>();
+    const unreset = performanceInput.onReset(() => held.clear());
+    const untempo = connectLooperTempo();
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Escape") {
+        e.preventDefault();
+        panicPerformance();
+        return;
+      }
       if (e.repeat) return;
       if (isEditableTarget(e.target)) return;
 
@@ -90,33 +99,24 @@ export function PhosphorApp() {
       }
 
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.code === "Escape") {
-        e.preventDefault();
-        held.clear();
-        useSynthStore.getState().stopMotion();
-        synth.allNotesOff();
-        return;
-      }
       const midi = midiFromCode(e.code, useSynthStore.getState().octave);
       if (midi === null) return;
       e.preventDefault();
       if (held.has(e.code)) return;
+      performanceInput.noteOn(`qwerty:${e.code}`, midi);
       held.set(e.code, midi);
-      synth.unlock();
-      synth.noteOn(midi);
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
       const midi = held.get(e.code);
       if (midi === undefined) return;
       held.delete(e.code);
-      synth.noteOff(midi);
+      performanceInput.noteOff(`qwerty:${e.code}`);
     };
 
     const panic = () => {
       held.clear();
-      useSynthStore.getState().stopMotion();
-      synth.allNotesOff();
+      panicPerformance();
     };
 
     const onVisibility = () => {
@@ -135,6 +135,8 @@ export function PhosphorApp() {
       window.removeEventListener("blur", panic);
       document.removeEventListener("visibilitychange", onVisibility);
       panic();
+      unreset();
+      untempo();
     };
   }, []);
 
@@ -178,6 +180,7 @@ export function PhosphorApp() {
 
         <section className="phosphor-keyboard shrink-0 rounded-xl bg-surface p-2 shadow-border pb-[max(0.5rem,env(safe-area-inset-bottom))]" aria-label="Keyboard">
           <KeyboardControls />
+          <NoteLooperControls />
           <Piano />
         </section>
       </main>

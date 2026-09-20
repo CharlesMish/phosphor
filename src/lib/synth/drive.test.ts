@@ -1464,3 +1464,101 @@ describe("combined live audio graph", () => {
     }
   });
 });
+
+describe('scheduled note engine ownership', () => {
+  it('places oscillator starts and short attack/release envelopes on audio time', () => {
+    withTestEngine((engine, context) => {
+      engine.setParams({ attack: 0.2, release: 0.1 });
+      engine.beginScheduledRun(1);
+      engine.scheduleNote(1, 'a', 60, 0.08, 0.1);
+      const osc = context.oscillators.at(-1)!;
+      assert.deepEqual(osc.startTimes, [0.08]);
+      assert.ok(Math.abs(osc.stopTimes.at(-1)! - 0.23) < 1e-12);
+      const mix = osc.connections[0] as TestGainNode;
+      const env = mix.connections[0] as TestGainNode;
+      const ramp = env.gain.linearRampCalls.at(-1)!;
+      assert.equal(ramp.endTime, 0.1);
+      assert.ok(Math.abs(ramp.value - VOICE_GAIN * 0.1) < 1e-12);
+    });
+  });
+  it('separates repeated and simultaneous scheduled pitches from live ownership', () => {
+    withTestEngine((engine, context) => {
+      engine.beginScheduledRun(1);
+      engine.scheduleNote(1, 'a', 60, 0.02, 0.04);
+      const a = context.oscillators.at(-1)!;
+      engine.scheduleNote(1, 'b', 60, 0.05, 0.09);
+      const b = context.oscillators.at(-1)!;
+      engine.noteOn(60); engine.noteOff(60);
+      assert.notEqual(a, b);
+      assert.equal(a.stopTimes.length, 1); assert.equal(b.stopTimes.length, 1);
+      context.currentTime = 0.06;
+      a.onended?.(); // A late old cleanup must not retire B.
+      let active: number[] = [];
+      engine.onVoices(notes => { active = notes; }); engine.refreshScheduledVoices();
+      assert.ok(active.includes(60));
+    });
+  });
+  it('cancels future attacks and rejects stale scheduling after Stop and panic', () => {
+    withTestEngine((engine, context) => {
+      engine.beginScheduledRun(10); engine.scheduleNote(10, 'a', 60, 0.09, 1);
+      const osc = context.oscillators.at(-1)!;
+      engine.cancelScheduledNotes();
+      assert.equal(osc.stopTimes.at(-1), 0); assert.equal(osc.connections.length, 0);
+      const count = context.oscillators.length;
+      engine.scheduleNote(10, 'stale', 62, 0.1, 1);
+      assert.equal(context.oscillators.length, count);
+      engine.beginScheduledRun(11); engine.scheduleNote(11, 'new', 62, 0.1, 1);
+      engine.allNotesOff(); engine.scheduleNote(11, 'panic-stale', 64, 0.1, 1);
+      assert.equal(context.oscillators.length, count + 1);
+    });
+  });
+  it('wave redraw and morph keep future starts and eventual releases intact', () => {
+    withTestEngine((engine, context) => {
+      engine.beginScheduledRun(1); engine.scheduleNote(1, 'a', 60, 0.09, 0.4);
+      engine.setWaveform(generatePreset('sine'), true);
+      const redrawn = context.oscillators.at(-1)!;
+      assert.equal(redrawn.startTimes[0], 0.09);
+      const stop = redrawn.stopTimes.at(-1);
+      engine.setCycleMorph(generatePreset('sine'), generatePreset('triangle'), 0.5);
+      const pair = context.oscillators.slice(-2);
+      assert.ok(pair.every(o => o.startTimes[0] === 0.09 && o.stopTimes.at(-1) === stop));
+      context.currentTime = 0.2;
+      const count = context.oscillators.length;
+      engine.setCycleMorph(generatePreset('sine'), generatePreset('triangle'), 0.8);
+      engine.setSpaceMix(0.2); engine.setDriveState(generateDrivePreset('identity'), 0.2, true);
+      assert.equal(context.oscillators.length, count);
+      assert.ok(pair.every(o => o.stopTimes.at(-1) === stop));
+    });
+  });
+  it('recording deadline survives redraw, and early physical release shortens it', () => {
+    withTestEngine((engine, context) => {
+      engine.noteOn(60); engine.limitLiveNote(60, 2);
+      engine.setWaveform(generatePreset('triangle'), true);
+      const osc = context.oscillators.at(-1)!;
+      assert.ok(osc.stopTimes.at(-1)! > 2);
+      context.currentTime = 0.25; engine.noteOff(60);
+      assert.ok(osc.stopTimes.at(-1)! < 1);
+    });
+  });
+  it('does not steal a full chord early when the next chord starts at its release seam', () => {
+    withTestEngine((engine, context) => {
+      engine.beginScheduledRun(1);
+      for (let i = 0; i < MAX_VOICES; i++) engine.scheduleNote(1, `first:${i}`, 60 + i, 0, 1);
+      const first = context.oscillators.slice(-MAX_VOICES);
+      context.currentTime = 0.95;
+      for (let i = 0; i < MAX_VOICES; i++) engine.scheduleNote(1, `second:${i}`, 60 + i, 1, 2);
+      assert.ok(first.every(o => o.stopTimes.length === 1));
+    });
+  });
+  it('steals an overlapping voice at the future attack, not at look-ahead time', () => {
+    withTestEngine((engine, context) => {
+      engine.beginScheduledRun(1);
+      for (let i = 0; i < MAX_VOICES; i++) engine.scheduleNote(1, `first:${i}`, 60 + i, 0, 2);
+      const first = context.oscillators.at(-MAX_VOICES)!;
+      context.currentTime = 0.9;
+      engine.scheduleNote(1, 'extra', 90, 1, 2);
+      assert.ok(first.stopTimes.at(-1)! >= 1);
+      assert.ok(first.stopTimes.at(-1)! < 1.1);
+    });
+  });
+});

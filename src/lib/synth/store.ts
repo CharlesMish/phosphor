@@ -680,7 +680,12 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
 
   stopMotion: () => set({ motionPlaying: false }),
 
-  setMotionBpm: (bpm) => set({ motionBpm: clampMotionBpm(bpm) }),
+  setMotionBpm: (bpm) => {
+    const next = clampMotionBpm(bpm);
+    if (next === get().motionBpm) return;
+    get().stopMotion();
+    set({ motionBpm: next });
+  },
   setMotionBeats: (beats) => {
     if (MOTION_BEAT_LENGTHS.includes(beats)) set({ motionBeats: beats });
   },

@@ -178,3 +178,35 @@ reproduces the old oscillator-swap behavior through the generic waveform API, an
 checks cancellation. It taps the actual voice envelope before effects and plays
 no audio. This browser probe was not executed in the repair environment because
 the local browser connection was unavailable and direct file navigation was blocked.
+
+## Note loop v1
+
+The keyboard's **Note loop** strip records one unquantized performance from the
+onscreen piano (including focused-key Enter/Space) and QWERTY keys. Choose **1, 2,
+4, or 8 bars**, then Record. The meter is fixed **4/4**. Recording starts immediately,
+keeps leading silence, and automatically repeats at the fixed window's end. Held
+notes receive a note-off at that boundary; release tails may ring naturally. Keys
+held through the boundary must be released and pressed again to play live.
+
+The loop stores note-on/off positions in **beats**, not audio. Repeating notes use
+the current synth, so CYCLE drawing, Morph, DRIVE, CHORUS, SPACE, and independent
+Motion remain available. Both BPM fields edit Motion's existing tempo (40–240 BPM).
+Changing BPM stops the note transport and Motion: a completed take keeps its beat
+positions; an unfinished recording is discarded. Press Play to restart the take
+from its beginning at the new tempo. Motion's start/phase is independent.
+
+A dedicated 25 ms timer fills a 100 ms look-ahead queue. Oscillator starts and
+attack/release envelopes are scheduled against `AudioContext.currentTime`, separate
+from Motion's 30 Hz modulation controller. Run IDs and independent live/loop voice
+ownership reject stale events. Stop, Clear, Escape, window blur, hiding the tab, and
+component cleanup cancel future attacks and release held notes; effects can still
+have natural tails. Play has a 20 ms scheduling lead. Long main-thread stalls skip
+missed attacks rather than replaying them in a burst.
+
+Record replaces the previous take. Stop during recording discards that partial
+take; Stop during playback keeps it. Clear removes it, and changing bar length
+clears it before the next take. There is no reload persistence, overdub, punch-in,
+count-in, metronome, swing, quantization, audio recording/export, or parameter
+recording (including drawing, Motion, Morph, effects, cutoff, envelope, and volume).
+Scheduled envelopes use settings at scheduling time; sound/effect edits continue
+through the shared engine. Polyphony retains the 12-held-voice limit.

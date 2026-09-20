@@ -96,6 +96,12 @@ type Voice = {
   env: GainNode;
   releasing: boolean;
   born: number;
+  startAt: number;
+  attack: number;
+  offAt?: number;
+  endAt?: number;
+  scheduledId?: string;
+  stolenAt?: number;
 };
 
 type CycleMorphRuntime = {
@@ -219,6 +225,8 @@ export class SynthEngine {
   private wave: PeriodicWave | null = null;
   private cycleMorph: CycleMorphRuntime | null = null;
   private voices = new Map<number, Voice>();
+  private scheduledVoices = new Map<string, Voice>();
+  private scheduledRun = 0;
   private params: SynthParams = {
     attack: 0.04,
     release: 0.28,
@@ -533,30 +541,30 @@ export class SynthEngine {
     if (!runtime.waveA || !runtime.waveB) return;
 
     const now = this.ctx.currentTime;
-    for (const voice of this.voices.values()) {
-      if (voice.releasing) continue;
+    for (const voice of this.allVoices()) {
+      if (!this.isHeld(voice)) continue;
       if (
         voice.source.kind === "cycle-morph" &&
         voice.source.version === runtime.version
       ) {
-        this.rampCycleMorphSource(voice.source, u, now);
+        this.rampCycleMorphSource(voice.source, u, Math.max(now, voice.startAt));
         continue;
       }
       const next = this.createCycleMorphSource(
         voice.freq,
         voice.env,
         runtime,
-        now,
+        Math.max(now, voice.startAt),
         0,
       );
-      this.transitionVoiceSource(voice, next, now);
+      this.transitionVoiceSource(voice, next, Math.max(now, voice.startAt));
     }
   }
 
   noteOn(midi: number) {
     if (!this.unlock() || !this.ctx || !this.filter || !this.wave) return;
     const existing = this.voices.get(midi);
-    if (existing && !existing.releasing) return;
+    if (existing && this.isHeld(existing)) return;
     if (existing) {
       this.voices.delete(midi);
       this.fadeOut(existing, 0.01);
@@ -585,6 +593,8 @@ export class SynthEngine {
       env,
       releasing: false,
       born: performance.now(),
+      startAt: now,
+      attack,
     };
     this.voices.set(midi, voice);
     this.rebalance(now);
@@ -593,11 +603,104 @@ export class SynthEngine {
 
   noteOff(midi: number) {
     const voice = this.voices.get(midi);
-    if (!voice || voice.releasing || !this.ctx) return;
+    if (!voice || !this.isHeld(voice) || !this.ctx) return;
     this.releaseVoice(voice);
   }
 
+  private allVoices(): Voice[] {
+    return [...this.voices.values(), ...this.scheduledVoices.values()];
+  }
+
+  private isHeld(voice: Voice): boolean {
+    return !voice.releasing && (voice.offAt === undefined || voice.offAt > (this.ctx?.currentTime ?? 0));
+  }
+
+  /** Separate ownership/run namespace: live key-ups can never release loop notes. */
+  beginScheduledRun(run: number) {
+    this.cancelScheduledNotes();
+    this.scheduledRun = run;
+  }
+
+  scheduleNote(run: number, id: string, midi: number, start: number, end: number) {
+    if (run !== this.scheduledRun || !this.ctx || !this.filter || !this.wave || end <= start) return;
+    const existing = this.scheduledVoices.get(id);
+    if (existing) {
+      if (existing.offAt !== end) this.scheduleRelease(existing, end);
+      return;
+    }
+    if (end <= this.ctx.currentTime) return;
+    const at = Math.max(start, this.ctx.currentTime);
+    this.stealIfNeeded(at);
+    const freq = midiToHz(midi);
+    const attack = Math.max(MIN_ATTACK, this.params.attack);
+    const env = this.ctx.createGain();
+    // A zero intrinsic value also keeps sources replaced before their start silent.
+    env.gain.value = 0;
+    env.gain.setValueAtTime(0, at);
+    env.gain.linearRampToValueAtTime(VOICE_GAIN, at + attack);
+    env.connect(this.filter);
+    const morph = this.cycleMorph;
+    const source = morph?.waveA && morph.waveB
+      ? this.createCycleMorphSource(freq, env, morph, at, 1)
+      : this.createSingleSource(freq, env, this.wave, at, 1);
+    const voice: Voice = { midi, freq, source, env, releasing: false,
+      born: performance.now(), startAt: at, attack, scheduledId: id };
+    this.scheduledVoices.set(id, voice);
+    this.scheduleRelease(voice, Math.max(at, end));
+    this.rebalance(this.ctx.currentTime);
+  }
+
+  /** Recording holds are released at the exact fixed-window end on the audio clock. */
+  limitLiveNote(midi: number, end: number) {
+    const voice = this.voices.get(midi);
+    if (voice && this.isHeld(voice)) this.scheduleRelease(voice, end);
+  }
+
+  private scheduleRelease(voice: Voice, at: number, releaseSeconds = this.params.release) {
+    if (!this.ctx) return;
+    const end = Math.max(voice.startAt, Math.min(at, voice.stolenAt ?? Infinity));
+    const release = Math.max(MIN_RELEASE, releaseSeconds);
+    const level = Math.max(0.0001, VOICE_GAIN * Math.min(1, (end - voice.startAt) / voice.attack));
+    const gain = voice.env.gain;
+    // Rebuild the known attack/release trajectory; unlike AudioParam.value this
+    // is correct even when note-off is queued before an attack has completed.
+    gain.cancelScheduledValues(voice.startAt);
+    gain.setValueAtTime(0, voice.startAt);
+    gain.linearRampToValueAtTime(level, Math.min(end, voice.startAt + voice.attack));
+    gain.setValueAtTime(level, end);
+    gain.exponentialRampToValueAtTime(0.0001, end + release);
+    voice.offAt = end;
+    voice.endAt = end + release + 0.03;
+    this.stopVoiceSource(voice.source, voice.endAt, () => this.finishVoice(voice));
+  }
+
+  cancelScheduledNotes() {
+    this.scheduledRun = -1;
+    for (const voice of this.scheduledVoices.values()) {
+      // Cancel even not-yet-started attacks. Stop()/Clear cannot leave a queued onset.
+      const now = this.ctx?.currentTime ?? 0;
+      voice.env.gain.cancelScheduledValues(now);
+      if (voice.startAt > now) {
+        voice.env.gain.setValueAtTime(0, now);
+        this.stopVoiceSource(voice.source, now, () => this.disconnectVoice(voice));
+        this.disconnectVoice(voice);
+      } else this.fadeOut(voice, 0.012);
+    }
+    this.scheduledVoices.clear();
+    if (this.ctx) this.rebalance(this.ctx.currentTime);
+    this.emitVoices();
+  }
+
+  refreshScheduledVoices() {
+    const now = this.ctx?.currentTime ?? 0;
+    for (const voice of this.scheduledVoices.values()) {
+      if (voice.endAt !== undefined && voice.endAt <= now) this.finishVoice(voice);
+    }
+    this.emitVoices();
+  }
+
   allNotesOff() {
+    this.cancelScheduledNotes();
     if (!this.ctx) return;
     for (const voice of [...this.voices.values()]) {
       this.voices.delete(voice.midi);
@@ -985,7 +1088,7 @@ export class SynthEngine {
     this.wave = wave;
     this.cycleMorph = null;
 
-    const live = [...this.voices.values()].filter((v) => !v.releasing);
+    const live = this.allVoices().filter((v) => this.isHeld(v));
     if (live.length === 0) return;
     this.crossfadeVoices(live, wave);
   }
@@ -1130,6 +1233,9 @@ export class SynthEngine {
       this.disconnectVoiceSource(previous);
     });
     voice.source = next;
+    if (voice.endAt !== undefined) {
+      this.stopVoiceSource(next, voice.endAt, () => this.finishVoice(voice));
+    }
   }
 
   private crossfadeVoices(live: Voice[], wave: PeriodicWave) {
@@ -1140,10 +1246,10 @@ export class SynthEngine {
         voice.freq,
         voice.env,
         wave,
-        now,
+        Math.max(now, voice.startAt),
         0,
       );
-      this.transitionVoiceSource(voice, next, now);
+      this.transitionVoiceSource(voice, next, Math.max(now, voice.startAt));
     }
   }
 
@@ -1173,6 +1279,12 @@ export class SynthEngine {
 
   private releaseVoice(voice: Voice) {
     if (!this.ctx) return;
+    if (voice.offAt !== undefined) {
+      this.scheduleRelease(voice, this.ctx.currentTime);
+      voice.releasing = true;
+      this.emitVoices();
+      return;
+    }
     voice.releasing = true;
     const now = this.ctx.currentTime;
     const release = Math.max(MIN_RELEASE, this.params.release);
@@ -1204,8 +1316,9 @@ export class SynthEngine {
   }
 
   private finishVoice(voice: Voice) {
-    const current = this.voices.get(voice.midi);
-    if (current === voice) this.voices.delete(voice.midi);
+    if (voice.scheduledId !== undefined) {
+      if (this.scheduledVoices.get(voice.scheduledId) === voice) this.scheduledVoices.delete(voice.scheduledId);
+    } else if (this.voices.get(voice.midi) === voice) this.voices.delete(voice.midi);
     this.disconnectVoice(voice);
     if (this.ctx) this.rebalance(this.ctx.currentTime);
     this.emitVoices();
@@ -1233,13 +1346,20 @@ export class SynthEngine {
     }
   }
 
-  private stealIfNeeded() {
-    const held = [...this.voices.values()].filter((v) => !v.releasing);
+  private stealIfNeeded(at = this.ctx?.currentTime ?? 0) {
+    const held = this.allVoices().filter((v) => !v.releasing &&
+      (v.offAt === undefined || v.offAt > at));
     if (held.length < MAX_VOICES) return;
     held.sort((a, b) => a.born - b.born);
     const oldest = held[0];
     if (!oldest) return;
-    this.voices.delete(oldest.midi);
+    if (at > (this.ctx?.currentTime ?? 0)) {
+      oldest.stolenAt = at;
+      this.scheduleRelease(oldest, at, 0.012);
+      return;
+    }
+    if (oldest.scheduledId !== undefined) this.scheduledVoices.delete(oldest.scheduledId);
+    else this.voices.delete(oldest.midi);
     this.fadeOut(oldest, 0.012);
   }
 
@@ -1248,7 +1368,7 @@ export class SynthEngine {
     // Releasing voices remain audible until finishVoice removes them. Counting
     // them prevents recovery from outrunning the release envelope in front of
     // DRIVE; short stolen/retriggered tails retain ample 12-voice headroom.
-    const n = Math.max(1, this.voices.size);
+    const n = Math.max(1, this.voices.size + this.scheduledVoices.size);
     const level = voiceRebalanceGain(n);
     const gain = this.bus.gain;
     if (level < this.rebalanceTarget) {
@@ -1272,9 +1392,10 @@ export class SynthEngine {
   }
 
   private emitVoices() {
-    const active = [...this.voices.values()]
-      .filter((v) => !v.releasing)
-      .map((v) => v.midi);
+    const now = this.ctx?.currentTime ?? 0;
+    const active = [...new Set(this.allVoices()
+      .filter((v) => this.isHeld(v) && v.startAt <= now)
+      .map((v) => v.midi))];
     this.voiceListeners.forEach((fn) => fn(active));
   }
 }
