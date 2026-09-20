@@ -7,6 +7,7 @@ import { useTreatment } from "@/lib/presentation/treatment";
 import { editorPlotInsets } from "@/lib/presentation/editor-layout";
 import { useSynthStore, type EditorDomain } from "@/lib/synth/store";
 import { WAVE_SIZE } from "@/lib/synth/waveform";
+import { cycleGestureIndex, cycleSampleIndex, paintCycleSpan } from "@/lib/synth/cycle-drawing";
 import {
   SPACE_SIZE,
   buildSpaceView,
@@ -575,7 +576,7 @@ export function WaveformEditor() {
       const index = clamp(Math.round(x * (CHORUS_SIZE - 1)), 0, CHORUS_SIZE - 1);
       return { index, value: clamp(1 - 2 * y, -1, 1), size: CHORUS_SIZE };
     }
-    const index = clamp(Math.round(x * WAVE_SIZE) % WAVE_SIZE, 0, WAVE_SIZE - 1);
+    const index = cycleGestureIndex(x, WAVE_SIZE);
     const value = clamp(1 - 2 * y, -1, 1);
     return { index, value, size: WAVE_SIZE };
   };
@@ -616,7 +617,7 @@ export function WaveformEditor() {
           : liveRef.current;
     originRef.current = source.slice();
     const wave = source.slice();
-    wave[hit.index] = hit.value;
+    wave[gestureDomain === "cycle" ? cycleSampleIndex(hit.index, wave.length) : hit.index] = hit.value;
     lastIndexRef.current = hit.index;
     if (space) {
       contourRef.current = wave;
@@ -654,7 +655,9 @@ export function WaveformEditor() {
             : liveRef.current
     ).slice();
     const last = lastIndexRef.current;
-    if (last === null || last === hit.index) {
+    if (gestureDomain === "cycle") {
+      paintCycleSpan(wave, last ?? hit.index, hit.index, hit.value);
+    } else if (last === null || last === hit.index) {
       wave[hit.index] = hit.value;
     } else {
       paintSpan(last, hit.index, wave[last] ?? hit.value, hit.value, wave);
