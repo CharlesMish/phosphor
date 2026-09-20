@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { synth } from "@/lib/synth/engine";
+import { performanceInput } from "@/lib/synth/looper-runtime";
 import { useSynthStore } from "@/lib/synth/store";
 import {
   BASE_MIDI,
@@ -50,20 +50,19 @@ export function Piano() {
   const heldByKey = useRef(new Map<string, number>());
   const activeSet = new Set(active);
 
-  const play = useCallback((midi: number) => {
-    synth.unlock();
-    synth.noteOn(midi);
+  const play = useCallback((owner: string, midi: number) => {
+    performanceInput.noteOn(owner, midi);
   }, []);
 
-  const stop = useCallback((midi: number) => {
-    synth.noteOff(midi);
+  const stop = useCallback((owner: string) => {
+    performanceInput.noteOff(owner);
   }, []);
 
   const releasePointer = useCallback(
     (pointerId: number) => {
       const midi = heldByPointer.current.get(pointerId);
       heldByPointer.current.delete(pointerId);
-      if (midi !== undefined) stop(midi);
+      if (midi !== undefined) stop(`pointer:${pointerId}`);
     },
     [stop],
   );
@@ -71,11 +70,15 @@ export function Piano() {
   useEffect(() => {
     const end = (e: PointerEvent) => releasePointer(e.pointerId);
     const releaseAll = () => {
-      for (const midi of heldByPointer.current.values()) stop(midi);
-      for (const midi of heldByKey.current.values()) stop(midi);
+      for (const id of heldByPointer.current.keys()) stop(`pointer:${id}`);
+      for (const code of heldByKey.current.keys()) stop(`piano:${code}`);
       heldByPointer.current.clear();
       heldByKey.current.clear();
     };
+    const unreset = performanceInput.onReset(() => {
+      heldByPointer.current.clear();
+      heldByKey.current.clear();
+    });
     const onVisibility = () => { if (document.hidden) releaseAll(); };
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
@@ -87,6 +90,7 @@ export function Piano() {
       window.removeEventListener("blur", releaseAll);
       document.removeEventListener("visibilitychange", onVisibility);
       releaseAll();
+      unreset();
     };
   }, [releasePointer, stop]);
 
@@ -96,8 +100,8 @@ export function Piano() {
     if (midi === null) return;
     e.preventDefault();
     if (e.repeat || heldByKey.current.has(e.code)) return;
+    play(`piano:${e.code}`, midi);
     heldByKey.current.set(e.code, midi);
-    play(midi);
   };
 
   const onKeyUp = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -105,11 +109,11 @@ export function Piano() {
     if (midi === undefined) return;
     e.preventDefault();
     heldByKey.current.delete(e.code);
-    stop(midi);
+    stop(`piano:${e.code}`);
   };
 
   const onBlur = () => {
-    for (const midi of heldByKey.current.values()) stop(midi);
+    for (const code of heldByKey.current.keys()) stop(`piano:${code}`);
     heldByKey.current.clear();
   };
 
@@ -119,9 +123,9 @@ export function Piano() {
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     const prev = heldByPointer.current.get(e.pointerId);
-    if (prev !== undefined && prev !== midi) stop(prev);
+    if (prev !== undefined && prev !== midi) stop(`pointer:${e.pointerId}`);
+    play(`pointer:${e.pointerId}`, midi);
     heldByPointer.current.set(e.pointerId, midi);
-    play(midi);
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -129,9 +133,9 @@ export function Piano() {
     const midi = midiFromPoint(e.clientX, e.clientY);
     const prev = heldByPointer.current.get(e.pointerId);
     if (midi === null || midi === prev) return;
-    if (prev !== undefined) stop(prev);
+    if (prev !== undefined) stop(`pointer:${e.pointerId}`);
+    play(`pointer:${e.pointerId}`, midi);
     heldByPointer.current.set(e.pointerId, midi);
-    play(midi);
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
