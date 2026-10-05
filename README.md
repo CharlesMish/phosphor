@@ -210,3 +210,16 @@ count-in, metronome, swing, quantization, audio recording/export, or parameter
 recording (including drawing, Motion, Morph, effects, cutoff, envelope, and volume).
 Scheduled envelopes use settings at scheduling time; sound/effect edits continue
 through the shared engine. Polyphony retains the 12-held-voice limit.
+
+## License
+
+CharlesMish's original contributions to Phosphor are available under the
+[MIT License](LICENSE). Dependencies and externally supplied assets retain
+their own licenses and copyright notices.
+
+The interface loads IBM Plex Mono and Space Grotesk from Google Fonts. Those
+fonts are licensed under the SIL Open Font License 1.1, not this project's MIT
+grant: [IBM Plex Mono license](https://github.com/google/fonts/blob/main/ofl/ibmplexmono/OFL.txt)
+and [Space Grotesk license](https://github.com/google/fonts/blob/main/ofl/spacegrotesk/OFL.txt).
+If you redistribute a standalone export with embedded fonts or dependencies,
+include their applicable licenses and notices.
