@@ -63,7 +63,12 @@ final class InstrumentModel: ObservableObject {
     func smooth() {
         beginEdit()
         let old = wave, n = wave.count
-        wave = (0..<n).map { 0.25 * old[($0 + n - 1) % n] + 0.5 * old[$0] + 0.25 * old[($0 + 1) % n] }
+        wave = (0..<n).map { index -> Float in
+            let left: Float = old[(index + n - 1) % n] * 0.25
+            let center: Float = old[index] * 0.5
+            let right: Float = old[(index + 1) % n] * 0.25
+            return left + center + right
+        }
         finishEdit()
     }
 
