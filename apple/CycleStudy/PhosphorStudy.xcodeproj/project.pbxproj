@@ -1,0 +1,358 @@
+// !$*UTF8*$!
+{
+	"archiveVersion" = 1;
+	"classes" = {
+	};
+	"objectVersion" = 56;
+	"objects" = {
+		"000000000000000000000001" = {
+			"isa" = "PBXProject";
+			"attributes" = {
+				"BuildIndependentTargetsInParallel" = "YES";
+				"LastUpgradeCheck" = "1600";
+				"TargetAttributes" = {
+					"000000000000000000000005" = {
+						"CreatedOnToolsVersion" = "16.0";
+					};
+					"000000000000000000000010" = {
+						"CreatedOnToolsVersion" = "16.0";
+						"TestTargetID" = "000000000000000000000005";
+					};
+				};
+			};
+			"buildConfigurationList" = "00000000000000000000000D";
+			"compatibilityVersion" = "Xcode 14.0";
+			"developmentRegion" = "en";
+			"hasScannedForEncodings" = 0;
+			"knownRegions" = ("en", "Base");
+			"mainGroup" = "000000000000000000000002";
+			"productRefGroup" = "000000000000000000000004";
+			"projectDirPath" = "";
+			"projectRoot" = "";
+			"targets" = ("000000000000000000000005", "000000000000000000000010");
+		};
+		"000000000000000000000002" = {
+			"isa" = "PBXGroup";
+			"children" = ("000000000000000000000003", "000000000000000000000027", "000000000000000000000004");
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000003" = {
+			"isa" = "PBXGroup";
+			"children" = ("00000000000000000000001A", "00000000000000000000001C", "00000000000000000000001E", "000000000000000000000020", "000000000000000000000022", "000000000000000000000024", "000000000000000000000025", "000000000000000000000026");
+			"path" = "PhosphorStudy";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000004" = {
+			"isa" = "PBXGroup";
+			"children" = ("000000000000000000000006", "000000000000000000000011");
+			"name" = "Products";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000005" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "00000000000000000000000A";
+			"buildPhases" = ("000000000000000000000007", "000000000000000000000008", "000000000000000000000009");
+			"buildRules" = ();
+			"dependencies" = ();
+			"name" = "PhosphorStudy";
+			"productName" = "PhosphorStudy";
+			"productReference" = "000000000000000000000006";
+			"productType" = "com.apple.product-type.application";
+		};
+		"000000000000000000000006" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"includeInIndex" = 0;
+			"path" = "PhosphorStudy.app";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"000000000000000000000007" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("00000000000000000000001B", "00000000000000000000001D", "00000000000000000000001F", "000000000000000000000021", "000000000000000000000023");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000008" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000009" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"00000000000000000000000A" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("00000000000000000000000B", "00000000000000000000000C");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"00000000000000000000000B" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.cmish.PhosphorCycleStudy";
+				"SDKROOT" = "auto";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator macosx";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"INFOPLIST_KEY_CFBundleDisplayName" = "Phosphor";
+				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.music";
+				"INFOPLIST_KEY_UILaunchScreen_Generation" = "YES";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation" = "YES";
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents" = "YES";
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone" = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "PhosphorStudy/PhosphorStudy-Bridging-Header.h";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "PhosphorStudy/PhosphorStudy.entitlements";
+				"ENABLE_APP_SANDBOX" = "YES";
+				"MARKETING_VERSION" = "0.1.0";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../Frameworks");
+			};
+			"name" = "Debug";
+		};
+		"00000000000000000000000C" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.cmish.PhosphorCycleStudy";
+				"SDKROOT" = "auto";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator macosx";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"INFOPLIST_KEY_CFBundleDisplayName" = "Phosphor";
+				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.music";
+				"INFOPLIST_KEY_UILaunchScreen_Generation" = "YES";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation" = "YES";
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents" = "YES";
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone" = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "PhosphorStudy/PhosphorStudy-Bridging-Header.h";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "PhosphorStudy/PhosphorStudy.entitlements";
+				"ENABLE_APP_SANDBOX" = "YES";
+				"MARKETING_VERSION" = "0.1.0";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../Frameworks");
+			};
+			"name" = "Release";
+		};
+		"00000000000000000000000D" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("00000000000000000000000E", "00000000000000000000000F");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"00000000000000000000000E" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"GCC_C_LANGUAGE_STANDARD" = "c11";
+				"MACOSX_DEPLOYMENT_TARGET" = "13.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "16.0";
+				"SWIFT_VERSION" = "5.0";
+				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"GCC_WARN_64_TO_32_BIT_CONVERSION" = "YES";
+				"GCC_WARN_ABOUT_RETURN_TYPE" = "YES_ERROR";
+				"CLANG_WARN_DOCUMENTATION_COMMENTS" = "YES";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"GCC_OPTIMIZATION_LEVEL" = "0";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+				"ENABLE_TESTABILITY" = "YES";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
+				"GCC_PREPROCESSOR_DEFINITIONS" = ("DEBUG=1", "$(inherited)");
+			};
+			"name" = "Debug";
+		};
+		"00000000000000000000000F" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"GCC_C_LANGUAGE_STANDARD" = "c11";
+				"MACOSX_DEPLOYMENT_TARGET" = "13.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "16.0";
+				"SWIFT_VERSION" = "5.0";
+				"SWIFT_STRICT_CONCURRENCY" = "targeted";
+				"GCC_WARN_64_TO_32_BIT_CONVERSION" = "YES";
+				"GCC_WARN_ABOUT_RETURN_TYPE" = "YES_ERROR";
+				"CLANG_WARN_DOCUMENTATION_COMMENTS" = "YES";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"GCC_OPTIMIZATION_LEVEL" = "s";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+			"name" = "Release";
+		};
+		"000000000000000000000010" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "000000000000000000000015";
+			"buildPhases" = ("000000000000000000000012", "000000000000000000000013", "000000000000000000000014");
+			"buildRules" = ();
+			"dependencies" = ("000000000000000000000018");
+			"name" = "InstrumentUITests";
+			"productName" = "InstrumentUITests";
+			"productReference" = "000000000000000000000011";
+			"productType" = "com.apple.product-type.bundle.ui-testing";
+		};
+		"000000000000000000000011" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.cfbundle";
+			"includeInIndex" = 0;
+			"path" = "InstrumentUITests.xctest";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"000000000000000000000012" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("000000000000000000000028");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000013" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000014" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000015" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("000000000000000000000016", "000000000000000000000017");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"000000000000000000000016" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.cmish.PhosphorCycleStudy.UITests";
+				"SDKROOT" = "iphoneos";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"TEST_TARGET_NAME" = "PhosphorStudy";
+			};
+			"name" = "Debug";
+		};
+		"000000000000000000000017" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.cmish.PhosphorCycleStudy.UITests";
+				"SDKROOT" = "iphoneos";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"TEST_TARGET_NAME" = "PhosphorStudy";
+			};
+			"name" = "Release";
+		};
+		"000000000000000000000018" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "000000000000000000000005";
+			"targetProxy" = "000000000000000000000019";
+		};
+		"000000000000000000000019" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "000000000000000000000001";
+			"proxyType" = 1;
+			"remoteGlobalIDString" = "000000000000000000000005";
+			"remoteInfo" = "PhosphorStudy";
+		};
+		"00000000000000000000001A" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PhosphorStudyApp.swift";
+			"sourceTree" = "<group>";
+		};
+		"00000000000000000000001B" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "00000000000000000000001A";
+		};
+		"00000000000000000000001C" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "InstrumentView.swift";
+			"sourceTree" = "<group>";
+		};
+		"00000000000000000000001D" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "00000000000000000000001C";
+		};
+		"00000000000000000000001E" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "InstrumentModel.swift";
+			"sourceTree" = "<group>";
+		};
+		"00000000000000000000001F" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "00000000000000000000001E";
+		};
+		"000000000000000000000020" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "AudioController.swift";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000021" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "000000000000000000000020";
+		};
+		"000000000000000000000022" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.c.c";
+			"path" = "DSP/CycleSynth.c";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000023" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "000000000000000000000022";
+		};
+		"000000000000000000000024" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.c.h";
+			"path" = "DSP/CycleSynth.h";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000025" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.c.h";
+			"path" = "PhosphorStudy-Bridging-Header.h";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000026" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.entitlements";
+			"path" = "PhosphorStudy.entitlements";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000027" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Tests/InstrumentUITests.swift";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000028" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "000000000000000000000027";
+		};
+	};
+	"rootObject" = "000000000000000000000001";
+}
