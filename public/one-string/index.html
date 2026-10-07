@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>One string</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body data-audio="off" data-sounding="no" data-dragging="no">
+  <main>
+    <header>
+      <p class="eyebrow">String study</p>
+      <h1>One string</h1>
+      <p class="lede">One plucked tone. Where you touch it, how far you pull, and how long it rings.</p>
+    </header>
+
+    <section class="audio-bar" aria-label="Audio">
+      <button id="enable" type="button">Enable audio</button>
+      <p id="audio-state" role="status" aria-live="polite">Audio off</p>
+    </section>
+
+    <section class="panel" aria-label="Note">
+      <div class="panel-head">
+        <h2>Note</h2>
+        <p id="freq" class="freq">440.0 Hz</p>
+      </div>
+      <div class="note-row">
+        <button type="button" id="note-a3" data-note="A3">A3</button>
+        <button type="button" id="note-a4" data-note="A4" aria-pressed="true">A4</button>
+        <label class="note-select">
+          <span class="sr-only">Chromatic note from C3 to C5</span>
+          <select id="note"></select>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="Decay">
+      <div class="panel-head">
+        <h2><label for="decay">Decay</label></h2>
+        <p id="decay-read">2.5 s</p>
+      </div>
+      <input id="decay" type="range" min="0.2" max="8" step="0.1" value="2.5" aria-describedby="decay-help">
+      <p id="decay-help" class="help">Time for the loop to fall about 60 dB. Higher harmonics fade sooner.</p>
+      <div class="preset-row">
+        <button type="button" id="decay-short" data-decay="0.4">Short <span>0.4 s</span></button>
+        <button type="button" id="decay-long" data-decay="6">Long <span>6 s</span></button>
+      </div>
+    </section>
+
+    <section
+      id="stage"
+      class="stage"
+      tabindex="0"
+      role="application"
+      aria-describedby="gesture-hint"
+      aria-label="String. Drag up or down from the line and release to pluck. Left and right position changes the tone. Distance from the line sets strength. Enter or Space plucks the armed setting."
+    >
+      <canvas id="string" width="900" height="240"></canvas>
+      <p id="gesture-hint" class="hint">Drag up or down from the line, then release.</p>
+    </section>
+
+    <section class="readout" aria-label="Armed pluck">
+      <p>Where <strong id="pos-read">0.50</strong> <span id="pos-name">round center</span></p>
+      <p>How hard <strong id="str-read">0.60</strong></p>
+    </section>
+
+    <section class="preset-row" aria-label="Recall a setting and play it">
+      <button type="button" id="pos-center">Center <span>0.50</span></button>
+      <button type="button" id="pos-end">Near end <span>0.12</span></button>
+      <button type="button" id="str-soft">Soft <span>0.28</span></button>
+      <button type="button" id="str-strong">Strong <span>0.85</span></button>
+    </section>
+
+    <section class="actions">
+      <button type="button" id="repeat">Repeat pluck</button>
+      <button type="button" id="stop">Stop</button>
+    </section>
+    <p id="last-pluck" class="last">Last pluck: none yet.</p>
+    <p class="keys">Keyboard: R repeats the armed pluck. Esc stops. Buttons work with Enter and Space.</p>
+
+    <footer class="fine">
+      <p>The tone is a Karplus–Strong delay line: one buffer, an allpass so the loop matches the note, a two-point average, and a gain for decay. Pluck position sets the width of one rectangular pulse. Pulling farther sets how strong that pulse is. A new pluck replaces the last one.</p>
+      <p>Both ends of the drawing are the same bright pluck. This string has no separate bridge pickup, no body, and no sampled recording. After a pluck, the curve is a slow sketch — about eight wiggles a second — scaled by the audio level, so the ring-down is visible. It is not moving at the note’s pitch, it is not the delay line, and it is not a prediction of a built instrument. Phosphor’s curve is a repeating waveform you draw; this pulse is a one-time pluck.</p>
+    </footer>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
