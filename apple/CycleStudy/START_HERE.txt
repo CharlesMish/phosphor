@@ -1,0 +1,19 @@
+PHOSPHOR · CYCLE STUDY
+Hardened source package · build 2
+
+For Charlie
+
+Unzip this folder on your Mac and give the folder to Codex. Ask:
+
+  Read CODEX_HANDOFF.md, run the Mac checks, and get this native
+  Phosphor Cycle Study running so I can try drawing and playing it.
+
+Or open PhosphorStudy.xcodeproj in Xcode, select the PhosphorStudy
+scheme and My Mac, then press Command-R.
+
+This is the drawn-waveform native study. It does not require npm,
+a server, or the browser String Lab. Xcode is required to build it.
+It is source code, not a signed installer or App Store release.
+
+CODEX_HANDOFF.md has exact commands and a short listening check.
+CHECKS.md distinguishes automated checks from device testing.

@@ -113,6 +113,70 @@ static void test_queue_and_invalid_controls(void) {
     pc_destroy(s);
     puts("PASS: full queue, latest edit, invalid inputs, reset");
 }
+
+static void test_key_change_continuity(void) {
+    PCSynth *changed = pc_create(SR), *reference = pc_create(SR);
+    assert(changed && reference);
+    float wave[PC_WAVE_SIZE], expected[1];
+    // The 64th harmonic fits the 300 Hz bank but not the 400 Hz bank. The old
+    // implementation dropped it at the next callback, creating an abrupt step.
+    for (int i = 0; i < PC_WAVE_SIZE; ++i)
+        wave[i] = (float)sin(2 * PI * 64 * i / PC_WAVE_SIZE);
+    assert(pc_set_wave(changed, wave, PC_WAVE_SIZE));
+    assert(pc_set_wave(reference, wave, PC_WAVE_SIZE));
+    pc_reset(changed);
+    pc_reset(reference);
+    pc_set_volume(changed, 1);
+    pc_set_volume(reference, 1);
+    pc_set_note(changed, 300);
+    pc_set_note(reference, 300);
+    pc_render(changed, buffer, 12001);
+    pc_render(reference, buffer, 12001);
+    pc_render(reference, expected, 1);
+    assert(fabs(expected[0]) > 0.1); // Ensure this actually observes a bank edge.
+    pc_set_note(changed, 400);
+    pc_render(changed, buffer, SR / 100);
+    assert(fabs(buffer[0] - expected[0]) < 0.000001);
+    assert_bounded(buffer, SR / 100);
+    assert(rms(buffer + SR * 6 / 1000, SR * 4 / 1000) < 0.00001);
+    pc_destroy(changed);
+    pc_destroy(reference);
+    puts("PASS: key change preserves continuity and finishes at the new harmonic bank");
+}
+
+static void test_rapid_keys_and_sample_rates(void) {
+    const double rates[] = {8000, 44100, 48000, 96000, 192000};
+    float wave[PC_WAVE_SIZE], samples[13];
+    shape(wave, 1);
+    for (size_t rate = 0; rate < sizeof(rates) / sizeof(rates[0]); ++rate) {
+        PCSynth *s = pc_create(rates[rate]);
+        assert(s);
+        assert(pc_set_wave(s, wave, PC_WAVE_SIZE));
+        pc_reset(s);
+        pc_set_volume(s, 1);
+        pc_set_note(s, 220);
+        pc_render(s, buffer, SR / 4);
+        // Re-key much faster than a tail can finish, including both harmonic
+        // ceilings and the frequency clamp. An unfinished tail must not grow.
+        for (unsigned key = 0; key < 150; ++key) {
+            pc_set_note(s, key % 2 ? 220 : 20000);
+            pc_render(s, samples, 13);
+            assert_bounded(samples, 13);
+        }
+        pc_set_note(s, 0);
+        pc_render(s, buffer, SR / 2);
+        assert(rms(buffer + SR / 4, SR / 4) == 0);
+        pc_set_note(s, 440);
+        pc_render(s, samples, 13);
+        pc_set_note(s, 880);
+        pc_render(s, samples, 1);
+        pc_reset(s);
+        pc_render(s, samples, 13);
+        assert(rms(samples, 13) == 0); // Reset also clears a saved transition.
+        pc_destroy(s);
+    }
+    puts("PASS: rapid re-keying, release and reset at 8–192 kHz stay bounded");
+}
 typedef struct { PCSynth *s; atomic_bool done; } Stress;
 static void *render_thread(void *arg) {
     Stress *stress = arg;
@@ -144,6 +208,8 @@ int main(void) {
     test_pitch_envelope_and_bounds();
     test_wave_changes_and_band_limit();
     test_queue_and_invalid_controls();
+    test_key_change_continuity();
+    test_rapid_keys_and_sample_rates();
     test_concurrent_controls();
     return 0;
 }

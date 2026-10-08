@@ -4,6 +4,9 @@ A tiny native instrument for iPhone, iPad, and Mac. Draw one repeating waveform,
 then hold a piano key to hear it. This is an experiment in whether drawing and
 playing feels good as an Apple app, before exploring motion or physical controls.
 
+For a Codex-assisted first run on your Mac, start with `START_HERE.txt` and
+`CODEX_HANDOFF.md`. This source package needs Xcode, but no npm or package install.
+
 ## Open and play
 
 1. On your Mac, open **PhosphorStudy.xcodeproj** in Xcode 16 or newer.
@@ -21,6 +24,8 @@ No microphone, camera, motion permission, server, account, or package install is
 
 - One 256-point drawn cycle, with interpolated strokes and a zero line.
 - Sine, triangle, saw, square, clear, smooth, and one-step undo.
+- Cancelled/background drawing restores the last committed curve; no-op edits
+  preserve Undo. Silent curves and zero volume explain why a held note is quiet.
 - One voice across C4–C5, touch/mouse hold to play, volume, and Stop.
 - Last curve saved on this device; edits apply on release.
 - Native SwiftUI interface and AVAudioEngine output shared across both platforms.
@@ -40,12 +45,16 @@ enough on your phone? These observations should decide the next experiment.
 Also check two-finger use (hold a note while drawing), background/foreground,
 headphone connection changes, and phone interruptions. Sound intentionally stops
 when the app becomes inactive. It does not keep playing in the background.
-The voice is monophonic: the newest pressed note wins, and releasing it does not
-resume an older held key. There is no computer-keyboard performance mapping yet.
+The voice is monophonic: the newest held note wins, and releasing it returns to
+an older key that is still held. Stop clears playback and blocks existing presses
+until they are released; a new press starts fresh. Escape also stops playback.
+There is no computer-keyboard performance mapping yet.
 
 ## Build and verification
 
 The deployment floors are iOS 16 and macOS 13. The project has no dependencies.
+`bash scripts/check-mac.sh` runs the Mac build, portable audio checks, and the
+`CycleModelChecks` unit-test scheme. See `CHECKS.md` for this package’s evidence.
 
 ```sh
 # Portable DSP checks, including address/undefined-behavior sanitizers:
@@ -83,11 +92,12 @@ with different harmonic limits keep the selected harmonics below 45% of the
 PeriodicWave port or a claim of perfect alias-free synthesis. Edits crossfade over
 25 ms; notes have a 12 ms attack and 60 ms release; volume is smoothed. Peak output
 is capped at 0.2 in the synth (device loudness still depends on system volume).
-Hard pitch changes can change the selected harmonic table; this study has no
+Key changes retain immediate pitch with a bounded 5 ms tail crossfade to avoid
+an abrupt waveform jump when the harmonic table changes. This study has no
 portamento. AVAudioEngine handles conversion to the output device's format.
 
 Keep future experiments small: first improve playing feel, then try one motion
 mapping. A second controller, string resonator, looper, or product packaging can
 be evaluated separately after that.
 
-MIT licensed under the repository's root LICENSE.
+MIT licensed; the repository license is included as `LICENSE` in this package.

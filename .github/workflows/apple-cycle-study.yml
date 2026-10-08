@@ -28,6 +28,13 @@ jobs:
           xcodebuild -project PhosphorStudy.xcodeproj -scheme PhosphorStudy \
             -destination 'generic/platform=macOS' -derivedDataPath build/macOS \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/macos-build.log
+      - name: Test instrument state on macOS
+        run: |
+          set -o pipefail
+          xcodebuild -project PhosphorStudy.xcodeproj -scheme CycleModelChecks \
+            -destination 'platform=macOS' -derivedDataPath build/model-tests \
+            -resultBundlePath build/Model.xcresult CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee build/model-test.log
       - name: Select iPhone simulator
         run: |
           simulator_id=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')

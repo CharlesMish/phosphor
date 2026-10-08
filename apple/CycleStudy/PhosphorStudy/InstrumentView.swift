@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import Combine
 
 private enum Ink {
     static let background = Color(red: 0.047, green: 0.075, blue: 0.078)
@@ -31,8 +32,9 @@ struct InstrumentView: View {
                     HStack {
                         label("01 / DRAW ONE CYCLE")
                         Spacer()
-                        Button("Undo", action: model.undo).disabled(!model.canUndo)
+                        Button("Undo", action: model.undo).disabled(!model.canUndo || model.isEditing)
                             .font(.system(size: 12, design: .monospaced))
+                            .accessibilityIdentifier("undo-curve")
                     }
                     CycleEditor(model: model)
                         .frame(height: 210)
@@ -46,6 +48,7 @@ struct InstrumentView: View {
                             HStack(spacing: 8) { presetButton("Square"); presetButton("Clear"); smoothButton }
                         }
                     }
+                    .disabled(model.isEditing)
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
@@ -56,11 +59,13 @@ struct InstrumentView: View {
                     }
                     Piano(model: model).frame(height: 132)
                     HStack(spacing: 12) {
-                        Image(systemName: "speaker.wave.1").foregroundStyle(Ink.muted)
+                        Image(systemName: "speaker.wave.1").foregroundStyle(Ink.muted).accessibilityHidden(true)
                         Slider(value: $model.volume, in: 0...1)
                             .tint(Ink.mint).accessibilityLabel("Volume")
+                            .accessibilityValue("\(Int(model.volume * 100)) percent")
                         Button("Stop", action: model.stop)
                             .buttonStyle(.bordered).accessibilityIdentifier("stop-audio")
+                            .keyboardShortcut(.escape, modifiers: [])
                     }
                 }
 
@@ -69,7 +74,8 @@ struct InstrumentView: View {
                         Text("Audio couldn’t start: \(error)").foregroundStyle(.orange)
                     }
                     Text(model.status).foregroundStyle(Ink.muted)
-                    Text("CYCLE STUDY 01 · One voice · Saved locally")
+                        .accessibilityIdentifier("instrument-status")
+                    Text("CYCLE STUDY 01 · One voice · Your curve stays on this device")
                         .font(.system(size: 10, design: .monospaced)).foregroundStyle(Ink.muted.opacity(0.7))
                 }.font(.system(size: 12))
             }
@@ -82,23 +88,25 @@ struct InstrumentView: View {
         .tint(Ink.mint)
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { phase in
-            if phase != .active { model.stop() }
+            if phase != .active { model.cancelEdit(); model.stop() }
         }
-        .onDisappear { model.stop() }
-        .onReceive(NotificationCenter.default.publisher(for: .AVAudioEngineConfigurationChange)) { notification in
+        .onDisappear { model.cancelEdit(); model.stop() }
+        // Audio-engine notifications may originate on an internal queue. Hop
+        // before touching view state or releasing the old engine.
+        .onReceive(NotificationCenter.default.publisher(for: .AVAudioEngineConfigurationChange).receive(on: RunLoop.main)) { notification in
             model.engineConfigurationChanged(notification)
         }
         #if os(iOS)
-        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification).receive(on: RunLoop.main)) { notification in
             if let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                raw == AVAudioSession.InterruptionType.began.rawValue { model.stop() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification).receive(on: RunLoop.main)) { notification in
             guard let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
                   let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
             if reason == .oldDeviceUnavailable || reason == .newDeviceAvailable { model.audioSystemChanged() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.mediaServicesWereResetNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.mediaServicesWereResetNotification).receive(on: RunLoop.main)) { _ in
             model.audioSystemChanged()
         }
         #endif
@@ -115,10 +123,13 @@ struct InstrumentView: View {
     private func presetButton(_ name: String) -> some View {
         Button(name) { model.choosePreset(name) }
             .buttonStyle(.bordered).font(.system(size: 12))
+            .fixedSize(horizontal: true, vertical: false)
             .accessibilityIdentifier("preset-\(name.lowercased())")
     }
     private var smoothButton: some View {
         Button("Smooth", action: model.smooth).buttonStyle(.bordered).font(.system(size: 12))
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityIdentifier("smooth-curve")
     }
 }
 
@@ -158,27 +169,31 @@ private struct CycleEditor: View {
             .gesture(DragGesture(minimumDistance: 0)
                 .updating($drawing) { _, state, _ in state = true }
                 .onChanged { value in
+                    guard value.location.x.isFinite, value.location.y.isFinite else { return }
                     if last == nil { model.beginEdit() }
+                    // A scene change can cancel the model's edit before this
+                    // gesture releases. Do not silently begin a second stroke.
+                    guard model.isEditing else { return }
                     let width = max(1, geometry.size.width), height = max(1, geometry.size.height)
-                    let index = min(model.wave.count - 1, max(0, Int((value.location.x / width * CGFloat(model.wave.count - 1)).rounded())))
+                    let position = min(1, max(0, value.location.x / width))
+                    let index = Int((position * CGFloat(model.wave.count - 1)).rounded())
                     let sample = Float(min(1, max(-1, (0.5 - value.location.y / height) / 0.44)))
-                    if let previous = last, previous.index != index {
-                        for i in min(previous.index, index)...max(previous.index, index) {
-                            let t = Float(i - previous.index) / Float(index - previous.index)
-                            model.wave[i] = previous.value + t * (sample - previous.value)
-                        }
-                    } else { model.wave[index] = sample }
+                    model.draw(from: last, to: index, value: sample)
                     last = (index, sample)
                 }
-                .onEnded { _ in last = nil; model.finishEdit() })
+                .onEnded { _ in
+                    guard last != nil else { return }
+                    last = nil
+                    model.finishEdit()
+                })
             .accessibilityLabel("Draw one waveform cycle")
             .accessibilityHint("Drag to change the waveform. Preset buttons offer accessible starting shapes.")
             .accessibilityIdentifier("cycle-editor")
             .onChange(of: drawing) { active in
-                if !active && last != nil { last = nil; model.finishEdit() }
+                if !active && last != nil { last = nil; model.cancelEdit() }
             }
             .onDisappear {
-                if last != nil { last = nil; model.finishEdit() }
+                if last != nil { last = nil; model.cancelEdit() }
             }
         }
     }
@@ -219,6 +234,7 @@ private struct PianoKey: View {
     let black: Bool
     let name: String
     @GestureState private var pressed = false
+    @State private var pressSource: UUID?
 
     var body: some View {
         let playing = model.activeNote == note
@@ -234,14 +250,27 @@ private struct PianoKey: View {
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0)
             .updating($pressed) { _, state, _ in state = true }
-            .onChanged { _ in model.noteOn(note) }
-            .onEnded { _ in model.noteOff(note) })
-        .onChange(of: pressed) { active in if !active { model.noteOff(note) } }
-        .onDisappear { model.noteOff(note) }
+            .onChanged { _ in
+                guard pressSource == nil else { return }
+                let source = UUID()
+                pressSource = source
+                model.noteOn(note, source: source)
+            }
+            .onEnded { _ in release() })
+        .onChange(of: pressed) { active in if !active { release() } }
+        .onDisappear { release() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name), play note")
+        .accessibilityValue(playing ? "Playing" : "Released")
+        .accessibilityHint("Activate for a short note.")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { model.accessibleTap(note) }
         .accessibilityIdentifier("note-\(note)")
+    }
+
+    private func release() {
+        guard let source = pressSource else { return }
+        pressSource = nil
+        model.noteOff(source: source)
     }
 }

@@ -62,6 +62,9 @@ final class AudioController {
     }
 
     func setWave(_ wave: [Float]) {
+        // Queue saturation is retryable; malformed input is not. Retrying an
+        // invalid table would otherwise create a new task every 20 ms forever.
+        guard wave.count == Int(PC_WAVE_SIZE), wave.allSatisfy(\.isFinite) else { return }
         retryTask?.cancel()
         // When stopped, consuming the queue here is safe and prevents edits made
         // before the first note from filling the producer queue.
@@ -80,6 +83,7 @@ final class AudioController {
     }
 
     func noteOn(_ midi: Int) {
+        guard (0...127).contains(midi) else { noteOff(); return }
         let frequency = Float(440 * pow(2, Double(midi - 69) / 12))
         pc_set_note(handle.pointer, frequency)
     }
