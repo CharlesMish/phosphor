@@ -1,10 +1,11 @@
 # String Lab
 
-A small browser playground for four ways of shaping a single sound. Published at
+A small browser playground for five ways of shaping a single sound. Published at
 `/phosphor/string-lab/`. The original `/phosphor/one-string/` remains a comparison.
 
 | Experiment | Playing gesture | Question |
 | --- | --- | --- |
+| Bowed Slide | Stroke vertically to sustain; move horizontally across A3–A4 for pitch. Optional gentle note attraction retains continuous bends. Absolute height is neutral. | Can one gesture sustain a note, glide, and add vibrato? |
 | Catch | Pull/release to pluck; a graded damper consumes the ringing energy. Hold damper supports mouse-only muted attacks. | Can controlling the ending create a satisfying rhythm? |
 | Slide | Touch once to excite; move across A3–A4 with continuous phase; move vertically for decay. | Can the player aim, glide, and return to a pitch? |
 | Bow | Rub to supply energy; vertical position changes silk/grain. Stillness ends excitation. | Is sustained shaping rewarding? |
@@ -22,7 +23,7 @@ build. Paths are relative so worklet imports remain valid under the Pages prefix
 There are no new package dependencies, external assets, service calls, microphone
 requests, or accounts. The existing native app work is not part of this change.
 
-One `AudioHost`, context, and worklet node serve all four engines. Control epochs
+One `AudioHost`, context, and worklet node serve all five engines. Control epochs
 discard stale events after Stop or a mode change. Startup can recover from a
 failed module load. Pausing also clears held gestures and demonstration playback.
 
@@ -54,12 +55,26 @@ Rendered-output tests cover 44.1/48 kHz: graded damping and no energy revival;
 continuous pitch and no attack on release; bow speed/texture and stationary/stale
 input decay; resonant differences beyond gain; finite bounded output; varied-phase
 retriggers; Stop/switch continuity and stale-epoch rejection. Independent tests
-exercise all four engines. Host tests reproduce failed startup and lifecycle races.
+exercise the original four engines. Host tests reproduce failed startup and lifecycle races.
 
 Headphones may reveal extra detail, but the first playtest should use the player's
 usual speakers. Automated output checks establish behavior, not musical appeal.
 Actual iPhone Safari feel and perceived latency require a physical-device playtest.
 The short 8–10 ms fade tails do not respond to changes made after they are captured.
+
+## Combined study: Bowed Slide
+
+Player feedback favored Slide’s direct pitch control and Bow’s movement-driven
+sustain. The fifth study (`#ribbon`, now the default) combines those axes: vertical
+motion supplies energy, horizontal location sets pitch. Holding still or moving
+only sideways does not excite a note. Gentle note attraction is optional and
+continuous, so it helps find note centers without stepping through vibrato.
+
+The touch/mouse surface and focused keyboard controls share the same engine.
+A 140 ms audio-thread watchdog ends excitation if motion updates stop arriving.
+The synthetic harmonic resonator keeps its phases through glides; it is a gesture
+prototype, not a physical violin simulation. There is no hidden top/bottom effect,
+second controller, device-motion input, or new pluck on pointer contact.
 
 ## Next iteration
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f0e8">
-  <meta name="description" content="Four small instruments to play with. Catch a ringing string, slide a note, bow a line, or reshape its resonance.">
+  <meta name="description" content="Five small instruments to play with. Try Bowed Slide: stroke to sustain, glide for pitch, and give one note a continuous breath.">
   <title>String Lab · Phosphor</title>
   <link rel="icon" href="./mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./styles.css">
@@ -17,11 +17,16 @@
     </header>
     <main>
       <section class="introduction" aria-labelledby="page-title">
-        <div><p class="eyebrow">A SMALL INSTRUMENT PLAYGROUND</p><h1 id="page-title">One string.<br><em>Four ways in.</em></h1></div>
+        <div><p class="eyebrow">A SMALL INSTRUMENT PLAYGROUND</p><h1 id="page-title">One string.<br><em>Five ways in.</em></h1></div>
         <div class="intro-copy"><p>A note is only the beginning.</p><p>Catch its tail. Bend its pitch.<br>Keep it alive. Change its character.</p><span class="quiet-note">Choose an experiment. Follow your hands.</span></div>
       </section>
       <nav class="experiment-grid" aria-label="Choose an experiment">
-        <button class="experiment-card" id="choose-catch" data-mode="catch" aria-pressed="true">
+        <button class="experiment-card" id="choose-ribbon" data-mode="ribbon" aria-pressed="true">
+          <span class="card-top"><span class="card-number">05</span><span class="card-verb">BOW & GLIDE</span><span class="new-badge">NEW</span><span class="selected-dot" aria-hidden="true"></span></span>
+          <svg class="card-art" viewBox="0 0 260 58" aria-hidden="true"><path class="ghost-line" d="M8 44h244M8 14h244"/><path d="M9 39c10-37 18 27 30-5s18 27 30-5 18 27 30-5 18 27 30-5 18 27 30-5 18 27 30-5 18 27 30-5 18 27 30-5"/><circle cx="129" cy="19" r="4"/></svg>
+          <span class="card-bottom"><strong>Bowed Slide</strong><span>A note with room to breathe ↗</span></span>
+        </button>
+        <button class="experiment-card" id="choose-catch" data-mode="catch" aria-pressed="false">
           <span class="card-top"><span class="card-number">01</span><span class="card-verb">DAMP & RELEASE</span><span class="selected-dot" aria-hidden="true"></span></span>
           <svg class="card-art" viewBox="0 0 260 58" aria-hidden="true"><path class="ghost-line" d="M6 29h248"/><path d="M8 29c12 0 14-20 27-20s14 40 27 40 14-40 27-40 14 40 27 40 14-40 27-40 14 40 27 40 14-20 27-20h55"/><rect class="art-pad" x="184" y="14" width="38" height="30" rx="8"/></svg>
           <span class="card-bottom"><strong>Catch</strong><span>Shape the ending ↗</span></span>
@@ -42,9 +47,9 @@
           <span class="card-bottom"><strong>Resonant Ends</strong><span>Explore the character ↗</span></span>
         </button>
       </nav>
-      <section class="instrument" id="instrument" aria-labelledby="experiment-title" data-mode="catch">
+      <section class="instrument" id="instrument" aria-labelledby="experiment-title" data-mode="ribbon">
         <div class="instrument-heading">
-          <div><p class="eyebrow" id="experiment-label">EXPERIMENT 01 / DAMP & RELEASE</p><h2 id="experiment-title">Catch</h2><p id="experiment-description">Pluck a note, then decide how long it gets to live.</p></div>
+          <div><p class="eyebrow" id="experiment-label">EXPERIMENT 05 / BOW & GLIDE</p><h2 id="experiment-title">Bowed Slide</h2><p id="experiment-description">Give a moving note a continuous breath.</p></div>
           <div class="audio-status"><span class="level-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span id="audio-state" role="status">Audio off</span></div>
         </div>
         <div class="toolbar" aria-label="Playback controls">
@@ -55,8 +60,8 @@
         </div>
         <div class="demo-track" aria-hidden="true"><div id="demo-progress"></div></div>
         <div id="experiment-view"></div>
-        <div class="performance-feedback"><span class="feedback-dot" aria-hidden="true"></span><p id="performance-hint" role="status">Enable audio, then pull the string and release.</p></div>
-        <div class="listening-note"><span>TRY THIS</span><p id="listening-question">Make one note ring, catch the next one early, then find a muted rhythm.</p></div>
+        <div class="performance-feedback"><span class="feedback-dot" aria-hidden="true"></span><p id="performance-hint" role="status">Enable audio, then hold and stroke up–down to bow.</p></div>
+        <div class="listening-note"><span>TRY THIS</span><p id="listening-question">Keep one note alive with vertical strokes. Glide to another, then rock sideways for a little vibrato.</p></div>
       </section>
       <footer class="footer"><p>Made for curious hands. <span>Mouse or touch · Escape stops sound.</span></p><a href="../one-string/">Compare the original study <span aria-hidden="true">↗</span></a></footer>
     </main>

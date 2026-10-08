@@ -2,11 +2,12 @@ import {Engine as Catch} from './experiments/catch/engine.mjs';
 import {Engine as Slide} from './experiments/slide/engine.mjs';
 import {Engine as Bow} from './experiments/bow/engine.mjs';
 import {Engine as Resonant} from './experiments/resonant/engine.mjs';
+import {Engine as Ribbon} from './experiments/ribbon/engine.mjs';
 
 export class StringLabProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.engines = {catch: new Catch(sampleRate), slide: new Slide(sampleRate), bow: new Bow(sampleRate), resonant: new Resonant(sampleRate)};
+    this.engines = {catch: new Catch(sampleRate), slide: new Slide(sampleRate), bow: new Bow(sampleRate), resonant: new Resonant(sampleRate), ribbon: new Ribbon(sampleRate)};
     this.active = null; this.id = null; this.epoch = -1;
     this.fadeLength = Math.max(8, Math.round(sampleRate * .01));
     this.tail = new Float64Array(this.fadeLength);
