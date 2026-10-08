@@ -1,0 +1,66 @@
+name: Apple Cycle Study
+on:
+  push:
+    branches: ['study/apple-cycle-*']
+    paths: ['apple/CycleStudy/**', '.github/workflows/apple-cycle-study.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: apple-cycle-study-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apple/CycleStudy
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check portable audio core
+        run: sh scripts/test-dsp.sh
+      - name: Build macOS app
+        run: |
+          mkdir -p build
+          set -o pipefail
+          xcodebuild -project PhosphorStudy.xcodeproj -scheme PhosphorStudy \
+            -destination 'generic/platform=macOS' -derivedDataPath build/macOS \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/macos-build.log
+      - name: Test instrument state on macOS
+        run: |
+          set -o pipefail
+          xcodebuild -project PhosphorStudy.xcodeproj -scheme CycleModelChecks \
+            -destination 'platform=macOS' -derivedDataPath build/model-tests \
+            -resultBundlePath build/Model.xcresult CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee build/model-test.log
+      - name: Select iPhone simulator
+        run: |
+          simulator_id=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
+          echo "SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+      - name: Build and exercise iPhone app
+        run: |
+          set -o pipefail
+          xcodebuild -project PhosphorStudy.xcodeproj -scheme PhosphorStudy \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -parallel-testing-enabled NO -derivedDataPath build/iOS \
+            -resultBundlePath build/Study.xcresult CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee build/ios-test.log
+      - name: Capture launched app
+        run: |
+          xcrun simctl launch "$SIMULATOR_ID" dev.cmish.PhosphorCycleStudy
+          sleep 2
+          xcrun simctl io "$SIMULATOR_ID" screenshot build/iphone-study.png
+      - name: Save native verification results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-cycle-study-checks
+          path: |
+            apple/CycleStudy/build/*.log
+            apple/CycleStudy/build/*.png
+            apple/CycleStudy/build/*.xcresult
+          retention-days: 14
