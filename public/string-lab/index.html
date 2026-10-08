@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f0e8">
+  <meta name="description" content="Four small instruments to play with. Catch a ringing string, slide a note, bow a line, or reshape its resonance.">
+  <title>String Lab · Phosphor</title>
+  <link rel="icon" href="./mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <a class="brand" href="../" aria-label="Back to Phosphor"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 16h5l4-10 8 20 4-10h5"/></svg>PHOSPHOR <span>/ PLAY STUDIES</span></a>
+      <span class="edition">STUDY 02 <span>•</span> STRING LAB</span>
+    </header>
+    <main>
+      <section class="introduction" aria-labelledby="page-title">
+        <div><p class="eyebrow">A SMALL INSTRUMENT PLAYGROUND</p><h1 id="page-title">One string.<br><em>Four ways in.</em></h1></div>
+        <div class="intro-copy"><p>A note is only the beginning.</p><p>Catch its tail. Bend its pitch.<br>Keep it alive. Change its character.</p><span class="quiet-note">Choose an experiment. Follow your hands.</span></div>
+      </section>
+      <nav class="experiment-grid" aria-label="Choose an experiment">
+        <button class="experiment-card" id="choose-catch" data-mode="catch" aria-pressed="true">
+          <span class="card-top"><span class="card-number">01</span><span class="card-verb">DAMP & RELEASE</span><span class="selected-dot" aria-hidden="true"></span></span>
+          <svg class="card-art" viewBox="0 0 260 58" aria-hidden="true"><path class="ghost-line" d="M6 29h248"/><path d="M8 29c12 0 14-20 27-20s14 40 27 40 14-40 27-40 14 40 27 40 14-40 27-40 14 40 27 40 14-20 27-20h55"/><rect class="art-pad" x="184" y="14" width="38" height="30" rx="8"/></svg>
+          <span class="card-bottom"><strong>Catch</strong><span>Shape the ending ↗</span></span>
+        </button>
+        <button class="experiment-card" id="choose-slide" data-mode="slide" aria-pressed="false">
+          <span class="card-top"><span class="card-number">02</span><span class="card-verb">BEND & GLIDE</span><span class="selected-dot" aria-hidden="true"></span></span>
+          <svg class="card-art" viewBox="0 0 260 58" aria-hidden="true"><path class="ghost-line" d="M12 47V11m39 36V11m40 36V11m39 36V11m40 36V11m39 36V11m39 36V11"/><path d="M10 42c46 0 52-2 78-9S135 12 169 15s44 6 82-4"/><circle cx="168" cy="15" r="5"/></svg>
+          <span class="card-bottom"><strong>Slide</strong><span>Find a little melody ↗</span></span>
+        </button>
+        <button class="experiment-card" id="choose-bow" data-mode="bow" aria-pressed="false">
+          <span class="card-top"><span class="card-number">03</span><span class="card-verb">MOVE & SUSTAIN</span><span class="selected-dot" aria-hidden="true"></span></span>
+          <svg class="card-art" viewBox="0 0 260 58" aria-hidden="true"><path class="ghost-line" d="M8 29h244"/><path d="M8 29c9 0 9-7 18-7s9 14 18 14 9-23 18-23 9 32 18 32 9-39 18-39 9 46 18 46 9-46 18-46 9 39 18 39 9-32 18-32 9 23 18 23 9-14 18-14 9 7 18 7h24"/></svg>
+          <span class="card-bottom"><strong>Bow</strong><span>Keep the sound alive ↗</span></span>
+        </button>
+        <button class="experiment-card" id="choose-resonant" data-mode="resonant" aria-pressed="false">
+          <span class="card-top"><span class="card-number">04</span><span class="card-verb">PLACE & TRANSFORM</span><span class="selected-dot" aria-hidden="true"></span></span>
+          <svg class="card-art" viewBox="0 0 260 58" aria-hidden="true"><path class="ghost-line" d="M8 29h244"/><ellipse cx="60" cy="29" rx="25" ry="9"/><ellipse cx="130" cy="29" rx="25" ry="17"/><ellipse cx="200" cy="29" rx="25" ry="24"/><path d="M200 5v48"/></svg>
+          <span class="card-bottom"><strong>Resonant Ends</strong><span>Explore the character ↗</span></span>
+        </button>
+      </nav>
+      <section class="instrument" id="instrument" aria-labelledby="experiment-title" data-mode="catch">
+        <div class="instrument-heading">
+          <div><p class="eyebrow" id="experiment-label">EXPERIMENT 01 / DAMP & RELEASE</p><h2 id="experiment-title">Catch</h2><p id="experiment-description">Pluck a note, then decide how long it gets to live.</p></div>
+          <div class="audio-status"><span class="level-meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span id="audio-state" role="status">Audio off</span></div>
+        </div>
+        <div class="toolbar" aria-label="Playback controls">
+          <button id="enable-audio" class="primary-button" type="button"><span aria-hidden="true">◖</span> Enable audio</button>
+          <button id="show-demo" class="secondary-button" type="button" aria-pressed="false"><span aria-hidden="true">▷</span> Show me</button>
+          <button id="stop-audio" class="secondary-button" type="button"><span aria-hidden="true">□</span> Stop</button>
+          <button id="reset-experiment" class="text-button" type="button">Reset <span aria-hidden="true">↺</span></button>
+        </div>
+        <div class="demo-track" aria-hidden="true"><div id="demo-progress"></div></div>
+        <div id="experiment-view"></div>
+        <div class="performance-feedback"><span class="feedback-dot" aria-hidden="true"></span><p id="performance-hint" role="status">Enable audio, then pull the string and release.</p></div>
+        <div class="listening-note"><span>TRY THIS</span><p id="listening-question">Make one note ring, catch the next one early, then find a muted rhythm.</p></div>
+      </section>
+      <footer class="footer"><p>Made for curious hands. <span>Mouse or touch · Escape stops sound.</span></p><a href="../one-string/">Compare the original study <span aria-hidden="true">↗</span></a></footer>
+    </main>
+  </div>
+  <noscript><p class="noscript">This instrument needs JavaScript to make sound.</p></noscript>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test:string-lab": "node --test scripts/string-lab/*.test.mjs",
     "lab": "node scripts/lab.mjs",
     "lab:list": "node scripts/lab.mjs --list",
     "dev": "vite --host 0.0.0.0 --port 8080",
@@ -35,3 +36,4 @@
     "vite": "^8.2.0"
   }
 }
+
