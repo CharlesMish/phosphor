@@ -1,5 +1,5 @@
 /** One context and one processor. Epochs reject stale controls after Stop/switch. */
-const IDS = new Set(['catch', 'slide', 'bow', 'resonant']);
+const IDS = new Set(['catch', 'slide', 'bow', 'resonant', 'ribbon']);
 const noop = () => {};
 export class AudioHost {
   constructor({onState = noop, onMeter = noop, onError = noop} = {}) {

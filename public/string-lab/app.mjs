@@ -3,8 +3,10 @@ import * as catchView from './experiments/catch/view.mjs';
 import * as slideView from './experiments/slide/view.mjs';
 import * as bowView from './experiments/bow/view.mjs';
 import * as resonantView from './experiments/resonant/view.mjs';
+import * as ribbonView from './experiments/ribbon/view.mjs';
 
 const experiments = {
+  ribbon: { module: ribbonView, title: 'Bowed Slide', label: 'EXPERIMENT 05 / BOW & GLIDE', description: 'Give a moving note a continuous breath.', hint: 'Hold and stroke up–down to bow. Travel left–right to change pitch.', question: 'Keep one note alive with vertical strokes. Glide to another, then rock sideways for a little vibrato.' },
   catch: { module: catchView, title: 'Catch', label: 'EXPERIMENT 01 / DAMP & RELEASE', description: 'Pluck a note, then decide how long it gets to live.', hint: 'Pull the string and release. Touch the strip below to catch its tail.', question: 'Make one note ring, catch the next one early, then find a muted rhythm.' },
   slide: { module: slideView, title: 'Slide', label: 'EXPERIMENT 02 / BEND & GLIDE', description: 'Let one note travel. Give it somewhere to go.', hint: 'Touch the ribbon to pluck. Move sideways for pitch, vertically for the tail.', question: 'Find two notes you like. Slide between them, then linger with a little vibrato.' },
   bow: { module: bowView, title: 'Bow', label: 'EXPERIMENT 03 / MOVE & SUSTAIN', description: 'Your movement keeps the string alive.', hint: 'Rub back and forth. Move higher or lower to change the texture.', question: 'Begin gently, build the sound, then let stillness bring it to an end.' },
@@ -80,7 +82,7 @@ function stop(message = 'Stopped. Your next gesture starts fresh.') {
 }
 
 async function select(id, updateHash = true) {
-  if (!Object.hasOwn(experiments, id)) id = 'catch';
+  if (!Object.hasOwn(experiments, id)) id = 'ribbon';
   if (id === currentId) return;
   const epoch = ++modeEpoch;
   transitioning = true;
@@ -174,4 +176,4 @@ window.addEventListener('pagehide', pause);
 window.addEventListener('blur', () => stop('Paused when the window lost focus. Play again when you’re ready.'));
 
 setState('off');
-select(location.hash.slice(1) || 'catch', false);
+select(location.hash.slice(1) || 'ribbon', false);
