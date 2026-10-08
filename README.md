@@ -2,6 +2,8 @@
 
 **Draw the cycle. Draw the space. Play the result.**
 
+**[Play Phosphor in your browser](https://charlesmish.github.io/phosphor/)**
+
 Phosphor is a browser instrument built around directly manipulating DSP structures:
 
 - **CYCLE** — draw one oscillator period; the drawing becomes a Web Audio `PeriodicWave`.
@@ -13,6 +15,8 @@ Phosphor is a browser instrument built around directly manipulating DSP structur
 - **Figurestead treatments** — change the rendering of the instrument without changing its sound or state.
 
 ## Run locally
+
+Use Node.js 22.12 or newer and npm (CI uses Node.js 22). From a checkout of this repository:
 
 ```bash
 npm ci
@@ -38,6 +42,7 @@ Stop the lab server with <kbd>Ctrl</kbd>+<kbd>C</kbd>.
 
 ```bash
 npm run test:synth
+npm run test:string-lab
 npm run typecheck
 npm run build
 ```
@@ -69,12 +74,6 @@ Chorus and Space show mix or Bypass at zero. Keyboard keys are native buttons:
 hold Enter or Space on a focused key to play it; focus/window loss releases it.
 The existing QWERTY mappings and audio engine remain in place.
 
-Cleanup validation: the 75 existing tests, typecheck, and production build pass.
-A separate DOM regression probe exercised focused piano key press/release, key
-repeat, focus/window loss, and effect summaries/navigation. This is not a claim
-of browser visual validation; compact/tablet rendering, 200% zoom, and treatment
-switching still need a browser review before merging this baseline.
-
 ## Control Cabinet
 
 Control Cabinet is the instrument's sole layout: main graph on the left, control
@@ -94,9 +93,7 @@ Choose a shape, hold a note, and press Play. Choosing a shape stops playback and
 creates one undoable Motion edit; it does not change captured waves, timing,
 other histories, or the current sound. The audio engine is unchanged.
 
-Cabinet graduation validation: all 94 tests, typecheck, and production build pass,
-including shape bounds, loop endpoints, undo/redo, stale playback rejection, and
-sound preservation. Browser visual validation was not performed in this pass.
+## Standalone export
 
 Build a single downloadable instrument with embedded code, styles, fonts, and
 favicon:
@@ -134,17 +131,9 @@ rebuild Space impulse responses, Chorus LFO tables, or held-note oscillators to
 animate effects. Full effect-shape interpolation and look-ahead transport remain
 outside this addition.
 
-Validation: 104 tests, typecheck, and production build pass. Coverage includes
-synchronized dispatch with/without A/B, reversed ranges and Drive caps, manual
-control priority, stop/late-tick rejection, history isolation, A/B Swap equivalence,
-and engine graph stability through repeated effect updates. No new browser audio
-or visual verification was performed in this pass.
+## Motion continuity and timing limits
 
-## Motion continuity repair
-
-`fix/phase-continuous-motion` carries the selected Control Cabinet layout and
-ports the audio-only repair from the earlier, unmerged `1c7c4bd` quality study.
-Manual morph, Motion drawing audition, and Motion playback now share a persistent
+Manual morph, Motion drawing audition, and Motion playback share a persistent
 pair of oscillators per note. A and B start at the same audio timestamp; later
 morph frames ramp complementary gains over 32 ms instead of replacing oscillators
 and rebuilding wave tables. Repeated flat frames leave the existing ramp alone.
@@ -166,18 +155,15 @@ but this is not sample-accurate look-ahead transport scheduling. An intentionall
 looped ramp still returns toward A at the seam, now through the gain ramp; use
 ping-pong for an outward-and-return trajectory.
 
-Validation: 91 tests pass, including engine-node lifecycle, gain-ramp interruption,
-queued-update cancellation, store dispatch, identical/near-identical endpoints,
-linear cancellation, and the existing history/effect tests. Typecheck and the
-production build pass. These tests do not substitute for an audible browser check.
-
 An additional real-browser OfflineAudioContext probe is included. Start `npm run
 dev`, open `/phosphor/scripts/qa/morph-render.html` on the dev server, and click
 **Run audio checks**. It compares flat and tiny Motion against static references,
 reproduces the old oscillator-swap behavior through the generic waveform API, and
 checks cancellation. It taps the actual voice envelope before effects and plays
-no audio. This browser probe was not executed in the repair environment because
-the local browser connection was unavailable and direct file navigation was blocked.
+no audio. The original repair report records that this probe was not run in that
+environment. Run it when reviewing audio changes; automated tests do not replace
+an audible browser check. See [development history](docs/DEVELOPMENT_HISTORY.md)
+for the original validation scopes and unverified observations.
 
 ## Note loop v1
 
@@ -210,6 +196,18 @@ count-in, metronome, swing, quantization, audio recording/export, or parameter
 recording (including drawing, Motion, Morph, effects, cutoff, envelope, and volume).
 Scheduled envelopes use settings at scheduling time; sound/effect edits continue
 through the shared engine. Polyphony retains the 12-held-voice limit.
+
+## Contributing and studies
+
+Keep each change focused on a branch from `main`; describe the musical or visual
+change and run the checks above before opening a pull request. Report listening
+and browser observations separately from automated results, including what was
+not tested. Preserve the Registration Ink caveat and the timing limits above.
+
+- [Development history](docs/DEVELOPMENT_HISTORY.md) indexes the original session reports.
+- [String Lab](docs/string-lab.md) and [One String study](docs/one-string-study.md)
+  describe separate string-instrument experiments and their limits.
+- `src/lib/synth/` owns sound/state logic; `src/components/synth/` owns the interface.
 
 ## License
 
