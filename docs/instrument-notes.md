@@ -128,6 +128,33 @@ recording (including drawing, Motion, Morph, effects, cutoff, envelope, and volu
 Scheduled envelopes use settings at scheduling time; sound/effect edits continue
 through the shared engine. Polyphony retains the 12-held-voice limit.
 
+## Saving sounds
+
+A sound is every drawn shape and setting that defines what Phosphor plays:
+the Cycle, captured A and B with the Morph position, attack/release/low-pass/
+volume, Drive curve, amount and Safe, Chorus curve, period and mix, Space
+contour, seed, Metal, mix and length, and the Motion path, tempo, length, mode
+and destinations. Held notes, undo history, Motion's playback position, the
+octave and the visual treatment are not part of a sound.
+
+- **Autosave.** Edits are written to this browser's storage about 0.4 s after
+  they stop, and when the page is hidden or closed. The last sound reopens before
+  the first paint on reload. While Motion plays, autosave waits until it stops,
+  then keeps the values Motion was holding.
+- **Library.** The sound menu in the header saves named sounds in this browser
+  (up to 48). Saving with an existing name, in any letter case, replaces that
+  entry. Clearing site data removes them.
+- **Files.** **Download file** writes a `.phosphor.json` file; **Open file** loads one.
+  Files are versioned (`phosphor-sound`, version 1) and validated on open.
+  Values outside the instrument's ranges are refused rather than clamped, so a
+  reopened sound is either exact or not loaded.
+- **Loading** replaces the whole sound, starts fresh undo histories and stops
+  Motion. Held and looping notes keep playing and crossfade into the loaded wave
+  and effects, as they do for any other edit. **New** restores a fresh visit's sound.
+
+Storage can be unavailable (some private modes or embedded frames). The menu then
+says so, and files still work.
+
 ## Visual treatments and the Registration Ink caveat
 
 Treatments change how the instrument is drawn, never its sound or state. There are

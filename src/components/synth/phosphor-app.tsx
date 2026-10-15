@@ -10,6 +10,7 @@ import { MotionPlaybackController } from "./motion-playback";
 import { Oscilloscope } from "./oscilloscope";
 import { NoteLooperControls } from "./note-looper";
 import { connectLooperTempo, panicPerformance, performanceInput } from "@/lib/synth/looper-runtime";
+import { soundSession } from "@/lib/synth/sound-session";
 import { Piano } from "./piano";
 import { HeaderBar, KeyboardControls, PresetBar, SideParams } from "./controls";
 import { EffectsSummary } from "./effects-summary";
@@ -48,6 +49,22 @@ export function PhosphorApp() {
       unready();
     };
   }, [setActiveNotes, setAudioReady]);
+
+  useEffect(() => {
+    const disconnect = soundSession.connect();
+    // Leaving or hiding the page writes any pending autosave immediately.
+    const flush = () => soundSession.flush();
+    const onHide = () => {
+      if (document.hidden) flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onHide);
+      disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
