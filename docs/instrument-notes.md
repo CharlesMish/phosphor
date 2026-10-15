@@ -155,6 +155,39 @@ octave and the visual treatment are not part of a sound.
 Storage can be unavailable (some private modes or embedded frames). The menu then
 says so, and files still work.
 
+## Rendering a take to WAV
+
+**WAV** in the note-loop strip renders the recorded take through a fresh copy of
+the production engine on an `OfflineAudioContext`: the same voices, filter,
+Drive, Chorus, Space, master volume and output safety stage. Nothing is played.
+
+- **Seamless loop** (default) is exactly one loop long. Earlier passes are
+  rendered and dropped so release and Space tails from the end of the loop are
+  already present at its start, as they are when the loop repeats live. The render
+  also runs 0.25 s into the next pass, because live the next loop's first notes are
+  scheduled 100 ms early and rebalance voice gain under the bar line.
+- **Take + tail** is the take once, followed by the release and Space length.
+- **Timing** follows the live looper: notes are scheduled on a 25 ms tick with
+  100 ms look-ahead, on a grid that repeats identically in every pass. Voices are
+  retired on those ticks rather than from `ended` events, whose audio time is
+  arbitrary during offline rendering.
+- **Motion** is included when it is playing at the moment you press WAV, restarted
+  from bar 1 and applied at 30 Hz like live playback. A seamless file loops Motion
+  cleanly only when Motion is in Loop or Ping-pong and its length divides the take.
+- **Sample rate** is the rate this device plays at (48 kHz before audio has
+  started). Space builds its reverb sample by sample, so the same sound is not
+  identical at 44.1 and 48 kHz; rendering at the device rate keeps the file
+  matching what you heard.
+- **File.** 32-bit float stereo WAV. A `LIST/INFO` chunk holds the title and a
+  short description; a `phos` chunk holds JSON provenance: the full sound
+  snapshot, the take's note events, tempo, bars, render plan and peak. Players
+  ignore chunks they do not know.
+
+The browser check at `/phosphor/scripts/qa/loop-render.html` (run with
+`npm run dev`) renders takes and checks beat timing, the take's tail, that the
+seamless file matches later steady-state passes, stereo Chorus, Motion, and that
+the WAV decodes back to identical samples in the browser.
+
 ## Visual treatments and the Registration Ink caveat
 
 Treatments change how the instrument is drawn, never its sound or state. There are
