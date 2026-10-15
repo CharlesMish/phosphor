@@ -70,6 +70,7 @@ import {
   type MotionNumericRouteId,
   type MotionRouteEndpoint,
 } from "./motion-routing";
+import type { SoundSnapshot } from "./sound-file";
 
 export type { WavePreset, SpacePreset, DrivePreset, ChorusPreset };
 
@@ -207,6 +208,8 @@ type SynthActions = {
   setAudioReady: (ready: boolean) => void;
   markDrawn: () => void;
   markSpaceDrawn: () => void;
+  /** Replace the whole sound. Undo histories start fresh and Motion stops; held notes keep sounding. */
+  loadSound: (sound: SoundSnapshot) => void;
 };
 
 const initialSamples = generatePreset("sine");
@@ -1037,8 +1040,110 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   setAudioReady: (ready) => set({ audioReady: ready }),
   markDrawn: () => set({ hasDrawn: true }),
   markSpaceDrawn: () => set({ spaceHasDrawn: true }),
+
+  loadSound: (sound) => {
+    const { cycle, voice, drive, chorus, space, motion } = sound;
+    const morphLive = cycle.morphLive && Boolean(cycle.slotA && cycle.slotB);
+    const samples = morphLive
+      ? morphSamples(cycle.slotA!, cycle.slotB!, cycle.morph)
+      : cloneWave(cycle.samples);
+    // Held and looping notes keep sounding: the engine crossfades them into the
+    // loaded wave and effects, as it does for any other edit.
+    set({
+      samples,
+      preset: cycle.preset,
+      hasDrawn: true,
+      slotA: cycle.slotA ? cloneWave(cycle.slotA) : null,
+      slotB: cycle.slotB ? cloneWave(cycle.slotB) : null,
+      morph: cycle.morph,
+      morphLive,
+      attack: voice.attack,
+      release: voice.release,
+      cutoff: voice.cutoff,
+      volume: voice.volume,
+      driveCurve: cloneTransfer(drive.curve),
+      drivePreset: drive.preset,
+      driveAmount: drive.amount,
+      driveSafe: drive.safe,
+      driveHasDrawn: true,
+      chorusCurve: cloneChorusCurve(chorus.curve),
+      chorusPreset: chorus.preset,
+      chorusPeriod: chorus.period,
+      chorusMix: chorus.mix,
+      spaceContour: cloneContour(space.contour),
+      spaceView: buildSpaceView(space.contour, space.seed),
+      spaceSeed: space.seed,
+      spacePreset: space.preset,
+      spaceMetal: space.metal,
+      spaceMix: space.mix,
+      spaceSeconds: space.seconds,
+      spaceHasDrawn: true,
+      motionPath: cloneMotionPath(motion.path),
+      motionBpm: motion.bpm,
+      motionBeats: motion.beats,
+      motionMode: motion.mode,
+      motionRoutes: structuredClone(motion.routes) as MotionRoutes,
+      motionPlaying: false,
+      motionProgress: 0,
+      past: [],
+      future: [],
+      motionPast: [],
+      motionFuture: [],
+      drivePast: [],
+      driveFuture: [],
+      chorusPast: [],
+      chorusFuture: [],
+      spacePast: [],
+      spaceFuture: [],
+    });
+    synth.setParams({ ...voice });
+    applyDrive(drive.curve, drive.amount, drive.safe);
+    synth.setChorusCurve(cloneChorusCurve(chorus.curve));
+    synth.setChorusPeriod(chorus.period);
+    synth.setChorusMix(chorus.mix);
+    applySpace(cloneContour(space.contour), space.seed, space.metal, space.seconds);
+    synth.setSpaceMix(space.mix);
+    if (morphLive) synth.setCycleMorph(cycle.slotA!, cycle.slotB!, cycle.morph, true);
+    else synth.setWaveform(cloneWave(cycle.samples), true);
+  },
   };
 });
+
+/** The sound a fresh visit starts with, used by New sound. */
+export const DEFAULT_SOUND_SOURCE = (() => {
+  const s = useSynthStore.getState();
+  return {
+    samples: cloneWave(s.samples),
+    preset: s.preset,
+    slotA: null,
+    slotB: null,
+    morph: s.morph,
+    morphLive: false,
+    attack: s.attack,
+    release: s.release,
+    cutoff: s.cutoff,
+    volume: s.volume,
+    driveCurve: cloneTransfer(s.driveCurve),
+    drivePreset: s.drivePreset,
+    driveAmount: s.driveAmount,
+    driveSafe: s.driveSafe,
+    chorusCurve: cloneChorusCurve(s.chorusCurve),
+    chorusPreset: s.chorusPreset,
+    chorusPeriod: s.chorusPeriod,
+    chorusMix: s.chorusMix,
+    spaceContour: cloneContour(s.spaceContour),
+    spaceSeed: s.spaceSeed,
+    spacePreset: s.spacePreset,
+    spaceMetal: s.spaceMetal,
+    spaceMix: s.spaceMix,
+    spaceSeconds: s.spaceSeconds,
+    motionPath: cloneMotionPath(s.motionPath),
+    motionBpm: s.motionBpm,
+    motionBeats: s.motionBeats,
+    motionMode: s.motionMode,
+    motionRoutes: structuredClone(s.motionRoutes) as MotionRoutes,
+  };
+})();
 
 synth.setWaveform(cloneWave(initialSamples), true);
 synth.setDriveState(

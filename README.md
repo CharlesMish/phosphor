@@ -30,12 +30,13 @@ Laboratory) change how the instrument looks, never how it sounds.
 4. Open **Motion**, choose a shape such as **3:3:2**, hold a note and press **Play**.
 5. Try a **Drive** curve, then add **Chorus** and **Space**.
 6. Use **Note loop** to record 1–8 bars and keep reshaping the sound while it repeats.
+7. Open the sound menu at the top (it starts as **Untitled sound**), name your sound and press **Save**.
 
 `Esc` stops all sound. `Ctrl/⌘ + Z` undoes the last edit. Up to 12 notes can sound at once.
 
 ## Current limits
 
-- **Nothing is saved yet.** Shapes, captured A/B cycles and note-loop takes are lost when the page reloads.
+- **Sounds save in the browser you made them in.** Your current sound comes back when you reload, and named sounds stay in that browser's storage. Use **Download file** to keep a copy or move a sound to another device. Note-loop takes are not saved yet.
 - **No audio export.** The note loop stores note timings, not sound, so there is no way yet to render a take to a file.
 - **Phones get a stacked layout.** The website works on a phone, but the keyboard sits below the drawing, so you scroll between them. A native study (below) explores a phone-first layout.
 - **Motion is not sample-accurate.** It is updated from a 30 Hz timer with smoothed ramps. Note-loop timing uses separate look-ahead scheduling.
@@ -44,7 +45,6 @@ Laboratory) change how the instrument looks, never how it sounds.
 
 ## Where it's heading
 
-- Save and reopen drawn shapes and A/B captures.
 - Render a note-loop take to a WAV file, so a sound made here can be taken into other tools.
 - Play the instrument through phone gestures rather than a piano keyboard.
 
