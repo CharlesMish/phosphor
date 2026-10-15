@@ -29,7 +29,7 @@ Laboratory) change how the instrument looks, never how it sounds.
 3. Press **Set A**, draw something different, press **Set B**, then move the **Morph** slider.
 4. Open **Motion**, choose a shape such as **3:3:2**, hold a note and press **Play**.
 5. Try a **Drive** curve, then add **Chorus** and **Space**.
-6. Use **Note loop** to record 1–8 bars and keep reshaping the sound while it repeats.
+6. Use **Note loop** to record 1–8 bars and keep reshaping the sound while it repeats. Press **WAV** to render the take to a file.
 7. Open the sound menu at the top (it starts as **Untitled sound**), name your sound and press **Save**.
 
 `Esc` stops all sound. `Ctrl/⌘ + Z` undoes the last edit. Up to 12 notes can sound at once.
@@ -37,7 +37,7 @@ Laboratory) change how the instrument looks, never how it sounds.
 ## Current limits
 
 - **Sounds save in the browser you made them in.** Your current sound comes back when you reload, and named sounds stay in that browser's storage. Use **Download file** to keep a copy or move a sound to another device. Note-loop takes are not saved yet.
-- **No audio export.** The note loop stores note timings, not sound, so there is no way yet to render a take to a file.
+- **Audio export is take-only.** **WAV** renders the recorded note loop with the current sound, as a 32-bit float stereo file, either as a seamless loop or the take plus its tail. There is no live audio recording, and takes are not saved with sounds yet.
 - **Phones get a stacked layout.** The website works on a phone, but the keyboard sits below the drawing, so you scroll between them. A native study (below) explores a phone-first layout.
 - **Motion is not sample-accurate.** It is updated from a 30 Hz timer with smoothed ramps. Note-loop timing uses separate look-ahead scheduling.
 
@@ -45,7 +45,6 @@ Laboratory) change how the instrument looks, never how it sounds.
 
 ## Where it's heading
 
-- Render a note-loop take to a WAV file, so a sound made here can be taken into other tools.
 - Play the instrument through phone gestures rather than a piano keyboard.
 
 A native iOS and macOS **Cycle Study** is in progress as a draft in
@@ -76,8 +75,9 @@ npm run typecheck
 npm run build
 ```
 
-For changes to audio behaviour, also run the offline morph probe: with `npm run dev`
-running, open `/phosphor/scripts/qa/morph-render.html` and click **Run audio checks**.
+For changes to audio behaviour, also run the browser probes: with `npm run dev`
+running, open `/phosphor/scripts/qa/morph-render.html` and
+`/phosphor/scripts/qa/loop-render.html` and click the button on each.
 Automated checks do not replace listening in a real browser.
 
 ### Standalone export
