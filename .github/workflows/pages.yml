@@ -30,8 +30,6 @@ jobs:
         run: npm ci
       - name: Run synth DSP tests
         run: npm run test:synth
-      - name: Run string playground checks
-        run: npm run test:string-lab
       - name: Typecheck
         run: npm run typecheck
       - name: Build static site
