@@ -4,6 +4,7 @@ import { noteLooper } from '@/lib/synth/looper-runtime';
 import { LOOP_BARS, type LoopBars } from '@/lib/synth/note-looper';
 import { MOTION_BPM_MIN, MOTION_BPM_MAX } from '@/lib/synth/motion';
 import { useSynthStore } from '@/lib/synth/store';
+import { PhraseRenderControls } from './phrase-render-controls';
 
 export function NoteLooperControls() {
   const state = useSyncExternalStore(noteLooper.subscribe, noteLooper.getSnapshot);
@@ -36,6 +37,7 @@ export function NoteLooperControls() {
         {state.state === 'empty' ? '4/4 · Ready' : state.state === 'recording' ? 'Recording' : state.state === 'playing' ? 'Looping' : 'Stopped'}
       </span>
       <progress className="h-1 w-20 accent-active" aria-label="Note loop progress" max={1} value={state.progress} />
+      <PhraseRenderControls hasTake={state.hasTake && state.state !== 'recording'} />
     </div>
   );
 }

@@ -4,6 +4,10 @@ The [README](../README.md) describes the current browser instrument, controls,
 checks and timing limits. Session counts are evidence for the revisions tested,
 not the current test total or a claim of audible/visual validation.
 
+Session save/load and render-from-start export are specified in
+[session and render notes](session-and-render.md). Automated checks for that
+work do not establish how it sounds on a device.
+
 The following links target the immutable README at `c5ff073`, before the public
 orientation cleanup. They preserve the original reports, including failures to
 perform browser checks and the upstream Registration Ink validation caveat.
