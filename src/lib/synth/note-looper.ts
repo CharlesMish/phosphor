@@ -102,6 +102,32 @@ export class NoteLooper {
     this.nextId = 0;
     this.update({ state: 'empty', hasTake: false, eventCount: 0 });
   }
+  /**
+   * The take that can be saved. An in-progress recording is omitted: Record has
+   * already cleared the previous take in memory, and the partial performance is
+   * not a session.
+   */
+  completedTake(): { bars: LoopBars; events: NoteEvent[] } {
+    if (this.snapshot.state === 'recording' || !this.snapshot.hasTake) {
+      return { bars: this.snapshot.bars, events: [] };
+    }
+    return { bars: this.snapshot.bars, events: this.getEvents() };
+  }
+  /** Replace the take and leave the transport stopped. Does not start playback. */
+  loadTake(bars: LoopBars, events: NoteEvent[]) {
+    if (!LOOP_BARS.includes(bars)) return;
+    this.stop();
+    this.events = events.map((event) => ({ ...event }));
+    this.nextId = this.events.reduce((max, event) => Math.max(max, event.id + 1), 0);
+    const hasTake = this.events.some((event) => event.type === 'on');
+    this.update({
+      bars,
+      state: hasTake ? 'stopped' : 'empty',
+      hasTake,
+      progress: 0,
+      eventCount: this.events.length,
+    });
+  }
   dispose() { this.stop(); this.unsubscribe(); }
   private startTimer() {
     const run = ++this.run;

@@ -191,11 +191,39 @@ missed attacks rather than replaying them in a burst.
 
 Record replaces the previous take. Stop during recording discards that partial
 take; Stop during playback keeps it. Clear removes it, and changing bar length
-clears it before the next take. There is no reload persistence, overdub, punch-in,
-count-in, metronome, swing, quantization, audio recording/export, or parameter
-recording (including drawing, Motion, Morph, effects, cutoff, envelope, and volume).
+clears it before the next take. There is no overdub, punch-in, count-in,
+metronome, swing, or quantization. Ordinary Play does not record audio, Motion,
+or control moves; it repeats the saved notes through the current synth.
 Scheduled envelopes use settings at scheduling time; sound/effect edits continue
 through the shared engine. Polyphony retains the 12-held-voice limit.
+
+## Session save and restore
+
+The **Session** menu saves the current instrument and the completed note loop
+as a `phosphor-session` version 1 JSON file, and can open one back. This
+browser also writes that same document locally, about 0.4 s after edits settle
+and when the page hides, then restores it before the first paint. Restore
+stops Motion and the note loop and does not start playback.
+
+A session stores the cycle, A/B and the morph, drawn Drive, Chorus, and Space
+shapes, envelope, filter, volume, octave, and Motion's path, mode, tempo,
+length, destinations, and ranges, plus the note-loop bar length and completed
+note events. It does not store undo history, playheads, held keys, the visual
+treatment, or a recording that is still in progress. A file that is malformed
+or an unsupported version is refused, and the session you were in stays as it
+was. Details and the tail and sampling rules for export are in
+[session and render notes](docs/session-and-render.md).
+
+## Render from start
+
+**Audition from start** and **Export WAV** render the saved notes and Motion
+from beat 1 through the production synth, then keep one phrase plus the release
+and Space tail. Leading rests stay. There is no count-in. The WAV is 32-bit
+float stereo at 48 kHz, and audition plays that same buffer. Ordinary Play is
+not synced to this clock, and the file is not a recording of live playback.
+Motion is sampled at 30 Hz and then smoothed by the existing gain and curve
+updates; that is not sample-accurate automation. Cancel, an edit, or a newer
+render discards an unfinished buffer.
 
 ## Contributing and studies
 

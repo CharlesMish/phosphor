@@ -258,6 +258,8 @@ export class SynthEngine {
   private preSafetyAnalyser: AnalyserNode | null = null;
   private safety: WaveShaperNode | null = null;
   private rebalanceTarget = 1;
+  /** Offline renders retire voices on the renderer's ticks, not oscillator ended events. */
+  private offline = false;
   ready = false;
 
   onVoices(fn: (active: number[]) => void): () => void {
@@ -292,8 +294,22 @@ export class SynthEngine {
     return analyserPeak(this.preSafetyAnalyser);
   }
 
+  /**
+   * Build the production graph on an OfflineAudioContext. The caller configures
+   * the sound after this returns. An offline engine is never resumed from a
+   * gesture and is discarded after rendering; it is not the live instrument.
+   */
+  attachOfflineContext(ctx: OfflineAudioContext) {
+    if (this.ctx) throw new Error("This engine already has an audio context.");
+    this.ctx = ctx as unknown as AudioContext;
+    this.offline = true;
+    this.buildGraph();
+    this.ready = true;
+  }
+
   /** Must be called synchronously inside a user gesture. */
   unlock(): boolean {
+    if (this.offline) return true;
     const Ctor = AudioContextCtor();
     if (!Ctor) return false;
     if (!this.ctx) {
@@ -739,7 +755,7 @@ export class SynthEngine {
       /* already stopped */
     }
     this.pendingSpace = this.space;
-    void this.ctx?.close();
+    if (this.ctx && this.ctx.state !== "closed") void this.ctx.close();
     this.ctx = null;
     this.filter = null;
     this.drive = null;
@@ -1268,11 +1284,14 @@ export class SynthEngine {
       onEnded();
     };
     for (const oscillator of source.oscillators) {
-      oscillator.onended = finishOscillator;
+      // Offline, ended events arrive whenever the main thread gets to them while
+      // rendering runs ahead, so their audio time is arbitrary. Phrase rendering
+      // retires voices at its fixed ticks via refreshScheduledVoices.
+      if (!this.offline) oscillator.onended = finishOscillator;
       try {
         oscillator.stop(when);
       } catch {
-        finishOscillator();
+        if (!this.offline) finishOscillator();
       }
     }
   }
@@ -1297,7 +1316,9 @@ export class SynthEngine {
     this.stopVoiceSource(voice.source, now + release + 0.03, () => {
       this.finishVoice(watch);
     });
-    window.setTimeout(() => this.finishVoice(watch), (release + 0.08) * 1000);
+    if (!this.offline && typeof window !== "undefined") {
+      window.setTimeout(() => this.finishVoice(watch), (release + 0.08) * 1000);
+    }
     this.rebalance(now);
     this.emitVoices();
   }
@@ -1312,7 +1333,9 @@ export class SynthEngine {
     this.stopVoiceSource(voice.source, now + seconds + 0.02, () => {
       this.disconnectVoice(voice);
     });
-    window.setTimeout(() => this.disconnectVoice(voice), (seconds + 0.08) * 1000);
+    if (!this.offline && typeof window !== "undefined") {
+      window.setTimeout(() => this.disconnectVoice(voice), (seconds + 0.08) * 1000);
+    }
   }
 
   private finishVoice(voice: Voice) {
