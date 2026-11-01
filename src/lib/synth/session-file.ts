@@ -21,8 +21,8 @@ import {
 import { WAVE_SIZE, type WavePreset } from "./waveform";
 
 export const SESSION_FORMAT = "phosphor-session";
-export const SESSION_VERSION = 1;
-export const SESSION_STORAGE_KEY = "phosphor.session.v1";
+export const SESSION_VERSION = 2;
+export const SESSION_STORAGE_KEY = "phosphor.session.v2";
 export const SESSION_EVENT_LIMIT = 4096;
 
 const DOMAINS = ["cycle", "motion", "drive", "chorus", "space"] as const;
@@ -48,7 +48,7 @@ export type SessionDocument = {
   };
   envelope: { attack: number; release: number };
   filter: { cutoff: number };
-  output: { volume: number; octave: number };
+  output: { volume: number; octave: number; trimDb: number };
   drive: {
     curve: number[];
     preset: DrivePreset | "custom";
@@ -183,9 +183,11 @@ function noteEvents(value: unknown, bars: LoopBars): NoteEvent[] {
       beat: numberIn(event.beat, 0, boundary, `Note event ${index} beat`),
     };
   });
-  const pairs = new Map<number, { on?: number; off?: number }>();
+  const pairs = new Map<number, { on?: number; off?: number; midi?: number }>();
   for (const event of events) {
     const pair = pairs.get(event.id) ?? {};
+    if (pair.midi !== undefined && pair.midi !== event.midi) fail("Paired notes disagree on pitch.");
+    pair.midi = event.midi;
     if (event.type === "on") {
       if (pair.on !== undefined) fail("A note repeats its note-on.");
       pair.on = event.beat;
@@ -208,7 +210,13 @@ function noteEvents(value: unknown, bars: LoopBars): NoteEvent[] {
  * apply anything until this returns.
  */
 export function parseSessionDocument(input: unknown): SessionDocument {
-  const root = record(input, "Session");
+  let root = record(input, "Session");
+  // v1 had no authored output trim. Its monitor volume remains a workspace setting.
+  if (root.format === SESSION_FORMAT && root.version === 1) {
+    const output = record(root.output, "Output");
+    exactKeys(output, ["volume", "octave"], "Output");
+    root = { ...root, version: SESSION_VERSION, output: { ...output, trimDb: 0 } };
+  }
   exactKeys(root, [
     "format", "version", "domain", "cycle", "envelope", "filter", "output",
     "drive", "chorus", "space", "motion", "noteLoop",
@@ -238,7 +246,7 @@ export function parseSessionDocument(input: unknown): SessionDocument {
   const filterIn = record(root.filter, "Filter");
   exactKeys(filterIn, ["cutoff"], "Filter");
   const outputIn = record(root.output, "Output");
-  exactKeys(outputIn, ["volume", "octave"], "Output");
+  exactKeys(outputIn, ["volume", "octave", "trimDb"], "Output");
   const driveIn = record(root.drive, "Drive");
   exactKeys(driveIn, ["curve", "preset", "amount", "safe", "hasDrawn"], "Drive");
   const drive = {
@@ -280,6 +288,7 @@ export function parseSessionDocument(input: unknown): SessionDocument {
     },
     filter: { cutoff: numberIn(filterIn.cutoff, 0, 1, "Low-pass") },
     output: {
+      trimDb: numberIn(outputIn.trimDb, -48, 0, "Sound trim"),
       volume: numberIn(outputIn.volume, 0, 1, "Volume"),
       octave: integerIn(outputIn.octave, -2, 3, "Octave"),
     },

@@ -1,8 +1,10 @@
+import { parseSound, soundToSession, parseJsonFile } from "./sound-file";
 import { noteLooper } from "./looper-runtime";
 import {
   parseSessionDocument,
   serializeSession,
   SESSION_STORAGE_KEY,
+  SESSION_VERSION,
   type SessionDocument,
 } from "./session-file";
 import { useSynthStore, type SavedSessionPatch } from "./store";
@@ -13,7 +15,7 @@ export type SessionStorageLike = {
   removeItem(key: string): void;
 };
 
-export type LocalRestoreReport = "restored" | "empty" | "rejected" | "unavailable";
+export type LocalRestoreReport = "restored" | "migrated" | "empty" | "rejected" | "unavailable";
 
 export let localRestoreReport: LocalRestoreReport = "empty";
 
@@ -29,7 +31,7 @@ function browserStorage(): SessionStorageLike | null {
   }
 }
 
-function patchFrom(document: SessionDocument): SavedSessionPatch {
+export function patchFrom(document: SessionDocument): SavedSessionPatch {
   return {
     domain: document.domain,
     samples: document.cycle.samples,
@@ -43,6 +45,7 @@ function patchFrom(document: SessionDocument): SavedSessionPatch {
     release: document.envelope.release,
     cutoff: document.filter.cutoff,
     volume: document.output.volume,
+    trimDb: document.output.trimDb,
     octave: document.output.octave,
     driveCurve: document.drive.curve,
     drivePreset: document.drive.preset,
@@ -74,7 +77,7 @@ export function captureSession(): SessionDocument {
   const take = noteLooper.completedTake();
   return parseSessionDocument({
     format: "phosphor-session",
-    version: 1,
+    version: SESSION_VERSION,
     domain: state.domain,
     cycle: {
       samples: state.samples,
@@ -87,7 +90,7 @@ export function captureSession(): SessionDocument {
     },
     envelope: { attack: state.attack, release: state.release },
     filter: { cutoff: state.cutoff },
-    output: { volume: state.volume, octave: state.octave },
+    output: { volume: state.volume, octave: state.octave, trimDb: state.trimDb },
     drive: {
       curve: state.driveCurve,
       preset: state.drivePreset,
@@ -158,13 +161,35 @@ export function restoreLocalSession(storage: SessionStorageLike | null = browser
     localRestoreReport = "unavailable";
     return localRestoreReport;
   }
-  const raw = storage.getItem(SESSION_STORAGE_KEY);
+  let raw: string | null;
+  try { raw = storage.getItem(SESSION_STORAGE_KEY); }
+  catch { localRestoreReport = "unavailable"; return localRestoreReport; }
+  if (!raw) {
+    try {
+      const oldSession = storage.getItem("phosphor.session.v1");
+      const oldSound = storage.getItem("phosphor.sound.current.v1");
+      if (oldSession) {
+        applySession(parseJsonFile(oldSession));
+        localRestoreReport = "migrated"; return localRestoreReport;
+      }
+      if (oldSound) {
+        const data = parseJsonFile(oldSound) as { voice: { volume: number }; motion: { bpm: number } };
+        const sound = parseSound(data);
+        const workspace = createFactorySession();
+        // This is startup workspace restoration, not a library sound switch.
+        workspace.output.volume = data.voice.volume;
+        workspace.motion.bpm = data.motion.bpm;
+        applySession(soundToSession(sound, workspace));
+        localRestoreReport = "migrated"; return localRestoreReport;
+      }
+    } catch { localRestoreReport = "rejected"; return localRestoreReport; }
+  }
   if (!raw) {
     localRestoreReport = "empty";
     return localRestoreReport;
   }
   try {
-    applySession(JSON.parse(raw));
+    applySession(parseJsonFile(raw));
     localRestoreReport = "restored";
   } catch {
     try {

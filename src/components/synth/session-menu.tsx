@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { stopPhraseAudition, invalidatePhraseRenders } from "@/lib/synth/phrase-export";
 import { Button } from "@/components/ui/button";
 import {
   applySession,
@@ -7,9 +8,11 @@ import {
   localRestoreReport,
   writeLocalSession,
 } from "@/lib/synth/session-apply";
+import { MAX_PACK_BYTES, parseJsonFile } from "@/lib/synth/sound-file";
 import { serializeSession, SessionFileError } from "@/lib/synth/session-file";
 
 const BOOT_MESSAGE = {
+  migrated: "Earlier saved workspace restored. Playback stopped; the original storage is retained.",
   restored: "Saved session restored. Playback is stopped.",
   rejected: "The saved session in this browser was unreadable and was discarded.",
   empty: "",
@@ -38,8 +41,11 @@ export function SessionMenu() {
   const openFile = async (file: File | undefined) => {
     if (!file) return;
     try {
+      if (file.size > MAX_PACK_BYTES) throw new SessionFileError("File exceeds 4 MB.");
       const text = await file.text();
-      applySession(JSON.parse(text));
+      const validated = parseJsonFile(text);
+      applySession(validated);
+      invalidatePhraseRenders(); stopPhraseAudition();
       writeLocalSession();
       setMessage("Session loaded. Playback is stopped.");
     } catch (error) {
@@ -56,6 +62,7 @@ export function SessionMenu() {
   const fresh = () => {
     if (!window.confirm("Start a new session? The current sound and note loop will be replaced.")) return;
     applySession(createFactorySession());
+    invalidatePhraseRenders(); stopPhraseAudition();
     writeLocalSession();
     setMessage("New session. Playback is stopped.");
     setOpen(false);

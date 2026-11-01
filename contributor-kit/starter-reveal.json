@@ -1,0 +1,22 @@
+{
+  "P-5E2EE157": {
+    "id": "foundation:bass-01",
+    "name": "Rounded foundation",
+    "contributor": "Astra foundation"
+  },
+  "P-4AAA3666": {
+    "id": "foundation:keys-01",
+    "name": "Clear chord keys",
+    "contributor": "Astra foundation"
+  },
+  "P-DA79DC34": {
+    "id": "foundation:lead-01",
+    "name": "Open reed line",
+    "contributor": "Astra foundation"
+  },
+  "P-E4E5AB95": {
+    "id": "foundation:pad-01",
+    "name": "Slow window",
+    "contributor": "Astra foundation"
+  }
+}

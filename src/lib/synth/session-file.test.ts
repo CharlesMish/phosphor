@@ -70,7 +70,7 @@ it("rejects malformed and unsupported sessions", () => {
   extra.extra = true;
   cases.push(extra);
   const version = clone(base);
-  (version as { version: number }).version = 2;
+  (version as { version: number }).version = 99;
   cases.push(version);
   const format = clone(base);
   (format as { format: string }).format = "other";

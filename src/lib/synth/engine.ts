@@ -119,6 +119,7 @@ export type SynthParams = {
   attack: number;
   release: number;
   volume: number;
+  trimDb: number;
   cutoff: number;
 };
 
@@ -210,6 +211,11 @@ export class SynthEngine {
   private chorusPeriod = CHORUS_DEFAULT_PERIOD;
   private chorusCurve: number[] | null = null;
   private master: GainNode | null = null;
+  private soundTrim: GainNode | null = null;
+  private auditionGain: GainNode | null = null;
+  private switchGain: GainNode | null = null;
+  private switching = false;
+  private auditionDb = 0;
   private analyser: AnalyserNode | null = null;
   private dryGain: GainNode | null = null;
   private wetIn: GainNode | null = null;
@@ -231,6 +237,7 @@ export class SynthEngine {
     attack: 0.04,
     release: 0.28,
     volume: 0.72,
+    trimDb: 0,
     cutoff: 1,
   };
   private spaceMix = 0.38;
@@ -332,9 +339,47 @@ export class SynthEngine {
     if (this.master && partial.volume !== undefined) {
       this.master.gain.setTargetAtTime(volumeToGain(this.params.volume), now, 0.03);
     }
+    if (this.soundTrim && partial.trimDb !== undefined) {
+      this.soundTrim.gain.setTargetAtTime(10 ** (this.params.trimDb / 20), now, 0.015);
+    }
     if (this.filter && partial.cutoff !== undefined) {
       this.filter.frequency.setTargetAtTime(cutoffHz(this.params.cutoff), now, 0.03);
     }
+  }
+
+  /** Fade the old graph before changing shared filters/effects. Input is blocked briefly. */
+  async beginSoundSwitch() {
+    this.switching = true;
+    this.allNotesOff();
+    const ctx = this.ctx;
+    const gain = this.switchGain?.gain;
+    if (!ctx || !gain) return;
+    const end = ctx.currentTime + 0.015;
+    gain.cancelScheduledValues(ctx.currentTime);
+    gain.setValueAtTime(gain.value, ctx.currentTime);
+    gain.linearRampToValueAtTime(0, end);
+    const deadline = Date.now() + 200;
+    while (ctx.state === "running" && ctx.currentTime < end && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    gain.cancelScheduledValues(ctx.currentTime);
+    gain.setValueAtTime(0, ctx.currentTime);
+  }
+
+  finishSoundSwitch() {
+    this.switching = false;
+    if (this.ctx && this.switchGain) {
+      const now = this.ctx.currentTime;
+      this.switchGain.gain.cancelScheduledValues(now);
+      this.switchGain.gain.setValueAtTime(0, now);
+      this.switchGain.gain.linearRampToValueAtTime(1, now + 0.03);
+    }
+  }
+
+  /** Listening-only attenuation, after safety. Never part of a sound or export. */
+  setAuditionTrim(db: number) {
+    this.auditionDb = Number.isFinite(db) ? Math.max(-24, Math.min(0, db)) : 0;
+    this.auditionGain?.gain.setTargetAtTime(10 ** (this.auditionDb / 20), this.ctx?.currentTime ?? 0, 0.02);
   }
 
   setSpaceMix(mix: number) {
@@ -578,6 +623,7 @@ export class SynthEngine {
   }
 
   noteOn(midi: number) {
+    if (this.switching) return;
     if (!this.unlock() || !this.ctx || !this.filter || !this.wave) return;
     const existing = this.voices.get(midi);
     if (existing && this.isHeld(existing)) return;
@@ -781,6 +827,9 @@ export class SynthEngine {
     this.wetB = null;
     this.sum = null;
     this.master = null;
+    this.soundTrim = null;
+    this.auditionGain = null;
+    this.switchGain = null;
     this.preSafetyAnalyser = null;
     this.safety = null;
     this.analyser = null;
@@ -888,6 +937,12 @@ export class SynthEngine {
     const sum = ctx.createGain();
     sum.gain.value = 1;
 
+    const soundTrim = ctx.createGain();
+    soundTrim.gain.value = 10 ** (this.params.trimDb / 20);
+    const switchGain = ctx.createGain();
+    switchGain.gain.value = 1;
+    const auditionGain = ctx.createGain();
+    auditionGain.gain.value = 10 ** (this.auditionDb / 20);
     const master = ctx.createGain();
     master.gain.value = volumeToGain(this.params.volume);
 
@@ -920,11 +975,14 @@ export class SynthEngine {
     dryGain.connect(sum);
     wetA.connect(sum);
     wetB.connect(sum);
-    sum.connect(master);
+    sum.connect(soundTrim);
+    soundTrim.connect(master);
     master.connect(preSafetyAnalyser);
     preSafetyAnalyser.connect(safety);
     safety.connect(analyser);
-    analyser.connect(ctx.destination);
+    analyser.connect(switchGain);
+    switchGain.connect(auditionGain);
+    auditionGain.connect(ctx.destination);
 
     this.filter = filter;
     this.drive = drive;
@@ -950,6 +1008,9 @@ export class SynthEngine {
     this.wetB = wetB;
     this.sum = sum;
     this.master = master;
+    this.soundTrim = soundTrim;
+    this.auditionGain = auditionGain;
+    this.switchGain = switchGain;
     this.preSafetyAnalyser = preSafetyAnalyser;
     this.safety = safety;
     this.analyser = analyser;

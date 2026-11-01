@@ -21,7 +21,7 @@ async function waitForJson() {
   throw new Error("Chrome did not open a debugging port.");
 }
 
-const chrome = spawn("google-chrome", [
+const chrome = spawn(process.env.CHROMIUM_PATH || "google-chrome", [
   "--headless=new",
   "--disable-gpu",
   "--no-sandbox",
@@ -157,7 +157,7 @@ try {
     expression: `JSON.stringify({
       statuses: [...document.querySelectorAll('[role="status"]')].map((node) => node.textContent),
       session: document.querySelector("#session-status")?.textContent ?? "",
-      stored: (() => { try { return JSON.parse(localStorage.getItem("phosphor.session.v1")).noteLoop.events.length; } catch { return null; } })(),
+      stored: (() => { try { return JSON.parse(localStorage.getItem("phosphor.session.v2")).noteLoop.events.length; } catch { return null; } })(),
     })`,
     returnByValue: true,
   });

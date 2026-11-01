@@ -152,7 +152,7 @@ try {
   const intact = serializeSession(captureSession());
   let rejected = false;
   try {
-    applySession({ ...saved, version: 2 });
+    applySession({ ...saved, version: 99 });
   } catch {
     rejected = true;
   }

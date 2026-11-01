@@ -2,7 +2,7 @@ import { LOOP_LOOKAHEAD, loopDurationSeconds } from "./note-looper";
 import { SynthEngine } from "./engine";
 import { motionFrameAtTime } from "./motion";
 import { mapMotionRoute } from "./motion-routing";
-import type { SessionDocument } from "./session-file";
+import { parseSessionDocument, type SessionDocument } from "./session-file";
 
 /** File sample rate. Space's impulse is built at this rate, so the file does not follow the device rate. */
 export const PHRASE_SAMPLE_RATE = 48000;
@@ -167,6 +167,7 @@ function prime(engine: SynthEngine, session: SessionDocument): AppliedDestinatio
     attack: session.envelope.attack,
     release: session.envelope.release,
     volume: session.output.volume,
+    trimDb: session.output.trimDb,
     cutoff: session.filter.cutoff,
   });
   engine.setDriveState(
@@ -237,6 +238,7 @@ export async function renderPhrase(
   session: SessionDocument,
   options: PhraseRenderOptions = {},
 ): Promise<PhraseRender> {
+  session = parseSessionDocument(session);
   const sampleRate = options.sampleRate ?? PHRASE_SAMPLE_RATE;
   if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 96000) {
     throw new PhraseRenderError("Unsupported sample rate.");
@@ -274,7 +276,7 @@ export async function renderPhrase(
     for (const when of marks) {
       void ctx.suspend(when).then(async () => {
         if (options.signal?.aborted) {
-          await (ctx as unknown as AudioContext).close().catch(() => {});
+          await ctx.resume();
           return;
         }
         const now = ctx.currentTime;
@@ -284,7 +286,7 @@ export async function renderPhrase(
         options.onProgress?.(Math.min(1, now / renderSeconds));
         await yieldToUi();
         if (options.signal?.aborted) {
-          await (ctx as unknown as AudioContext).close().catch(() => {});
+          await ctx.resume();
           return;
         }
         await ctx.resume();
@@ -292,6 +294,7 @@ export async function renderPhrase(
     }
 
     const buffer = await ctx.startRendering();
+    if (options.signal?.aborted) throw new DOMException("The render was cancelled.", "AbortError");
     const channels: [Float32Array, Float32Array] = [
       buffer.getChannelData(0).slice(),
       buffer.getChannelData(Math.min(1, buffer.numberOfChannels - 1)).slice(),

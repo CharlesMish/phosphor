@@ -1,6 +1,7 @@
 import { renderPhrase, type PhraseRender, type PhraseRenderOptions } from "./phrase-render";
 import { captureSession } from "./session-apply";
 import { serializeSession, type SessionDocument } from "./session-file";
+import { useSynthStore } from "./store";
 import { synth } from "./engine";
 import { encodeFloatWav, type WavMetadata } from "./wav";
 
@@ -70,18 +71,33 @@ export function downloadPhraseWav(bytes: Uint8Array, bpm: number) {
 }
 
 let audition: AudioBufferSourceNode | null = null;
+let stopMonitor: (() => void) | null = null;
+let auditionLevel: GainNode | null = null;
+let listeningTrim = 0;
+export function setPhraseAuditionTrim(db: number) {
+  listeningTrim = Number.isFinite(db) ? Math.max(-24, Math.min(0, db)) : 0;
+  updateAuditionLevel?.();
+}
+let updateAuditionLevel: (() => void) | null = null;
 
 export function stopPhraseAudition() {
+  const source = audition;
+  const level = auditionLevel;
+  audition = null; auditionLevel = null;
+  stopMonitor?.(); stopMonitor = null; updateAuditionLevel = null;
+  if (!source || !level) return;
+  const now = source.context.currentTime;
+  source.onended = () => { source.disconnect(); level.disconnect(); };
   try {
-    audition?.stop();
-  } catch {
-    /* already stopped */
-  }
-  audition = null;
+    level.gain.cancelScheduledValues(now);
+    level.gain.setValueAtTime(level.gain.value, now);
+    level.gain.linearRampToValueAtTime(0, now + 0.012);
+    source.stop(now + 0.015);
+  } catch { source.disconnect(); level.disconnect(); }
 }
 
 /** Play the rendered buffer. This is the file, not a second performance through the live looper. */
-export function playPhraseRender(result: PhraseRender) {
+export function playPhraseRender(result: PhraseRender, monitorReference = useSynthStore.getState().volume) {
   stopPhraseAudition();
   if (!synth.unlock()) throw new Error("Audio is unavailable.");
   const ctx = synth.getContext();
@@ -91,10 +107,25 @@ export function playPhraseRender(result: PhraseRender) {
   buffer.copyToChannel(new Float32Array(result.channels[1]), 1);
   const source = ctx.createBufferSource();
   source.buffer = buffer;
-  source.connect(ctx.destination);
+  const level = ctx.createGain();
+  auditionLevel = level;
+  const update = () => {
+    const volume = useSynthStore.getState().volume;
+    // Reference render contains monitor gain. Zero-volume renders stay silent.
+    const gain = monitorReference > 0 ? Math.min(1, (volume / monitorReference) ** 2) : 0;
+    level.gain.setTargetAtTime(gain * 10 ** (listeningTrim / 20), ctx.currentTime, 0.02);
+  };
+  updateAuditionLevel = update;
+  level.gain.value = 10 ** (listeningTrim / 20);
+  update(); stopMonitor = useSynthStore.subscribe(update);
+  source.connect(level).connect(ctx.destination);
   audition = source;
   source.onended = () => {
-    if (audition === source) audition = null;
+    if (audition === source) {
+      audition = null; auditionLevel = null;
+      stopMonitor?.(); stopMonitor = null; updateAuditionLevel = null;
+      source.disconnect(); level.disconnect();
+    }
   };
   source.start();
 }

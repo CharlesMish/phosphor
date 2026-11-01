@@ -249,3 +249,8 @@ grant: [IBM Plex Mono license](https://github.com/google/fonts/blob/main/ofl/ibm
 and [Space Grotesk license](https://github.com/google/fonts/blob/main/ofl/spacegrotesk/OFL.txt).
 If you redistribute a standalone export with embedded fonts or dependencies,
 include their applicable licenses and notices.
+
+
+## Preset collection review branch
+
+The Sounds shelf adds four playable proof voicings, role/character search, favorites and protected copies. Loading preserves your take, tempo and monitor; demos and Motion start explicitly. See [the five-minute audition](docs/preset-foundation/AUDITION.md), [foundation decision and checks](docs/preset-foundation/REVIEW.md), and [neutral contributor kit](contributor-kit/README.md). This branch has not been merged or deployed.

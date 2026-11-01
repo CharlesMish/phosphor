@@ -102,6 +102,7 @@ type SynthState = {
   attack: number;
   release: number;
   volume: number;
+  trimDb: number;
   cutoff: number;
   octave: number;
   activeNotes: number[];
@@ -162,6 +163,7 @@ export type SavedSessionPatch = {
   release: number;
   cutoff: number;
   volume: number;
+  trimDb: number;
   octave: number;
   driveCurve: number[];
   drivePreset: DrivePreset | "custom";
@@ -394,6 +396,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   attack: 0.04,
   release: 0.28,
   volume: 0.72,
+  trimDb: 0,
   cutoff: 1,
   octave: 0,
   activeNotes: [],
@@ -1093,6 +1096,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
       release: patch.release,
       cutoff: patch.cutoff,
       volume: patch.volume,
+      trimDb: patch.trimDb,
       octave: patch.octave,
       driveCurve: cloneTransfer(patch.driveCurve),
       drivePreset: patch.drivePreset,
@@ -1140,6 +1144,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
       attack: patch.attack,
       release: patch.release,
       volume: patch.volume,
+      trimDb: patch.trimDb,
       cutoff: patch.cutoff,
     });
     synth.setDriveState(patch.driveCurve, patch.driveAmount, patch.driveSafe);

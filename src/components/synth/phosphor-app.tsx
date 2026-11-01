@@ -10,6 +10,7 @@ import { MotionPlaybackController } from "./motion-playback";
 import { Oscilloscope } from "./oscilloscope";
 import { NoteLooperControls } from "./note-looper";
 import { connectLooperTempo, panicPerformance, performanceInput } from "@/lib/synth/looper-runtime";
+import { stopPhraseAudition, invalidatePhraseRenders } from "@/lib/synth/phrase-export";
 import { startSessionAutosave } from "@/lib/synth/session-apply";
 import { Piano } from "./piano";
 import { HeaderBar, KeyboardControls, PresetBar, SideParams } from "./controls";
@@ -81,6 +82,7 @@ export function PhosphorApp() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Escape") {
         e.preventDefault();
+        invalidatePhraseRenders(); stopPhraseAudition();
         panicPerformance();
         return;
       }
@@ -117,6 +119,7 @@ export function PhosphorApp() {
 
     const panic = () => {
       held.clear();
+      invalidatePhraseRenders(); stopPhraseAudition();
       panicPerformance();
     };
 
