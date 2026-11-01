@@ -1,4 +1,4 @@
-import { parseJsonFile, parseSound, type SoundDocument } from "./sound-file";
+import { exactObject, parseJsonFile, parseSound, type SoundDocument } from "./sound-file";
 import { auditionId, defaultMetadata, parseEntry, parsePack, type PresetEntry, type PresetMetadata, type PresetPack } from "./preset-pack";
 
 export type KeyValueStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -8,6 +8,16 @@ export const CURRENT_SOUND_KEY = "phosphor.sound.current.v1";
 export const SOUND_LIBRARY_LIMIT = 192;
 type SavedEntry = { entry: PresetEntry; editable: boolean };
 type Shelf = { entries: SavedEntry[]; favorites: string[] };
+
+/** randomUUID is HTTPS-only; getRandomValues also supports local LAN auditions. */
+export function createSoundId(namespace: "local" | "imported", random: Pick<Crypto, "getRandomValues"> = globalThis.crypto): string {
+  if (!random?.getRandomValues) throw new Error("Random IDs are unavailable. Open Phosphor on HTTPS or localhost to save sounds.");
+  const bytes = random.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+  return `${namespace}:sound-${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
 
 export function browserStorage(): KeyValueStore | null {
   try {
@@ -35,6 +45,7 @@ export class SoundLibrary {
   private listeners = new Set<() => void>();
   private store: KeyValueStore | null;
   private factory: PresetEntry[];
+  private blockedReason = "";
   constructor(store: KeyValueStore | null, factory: PresetEntry[]) {
     this.store = store; this.factory = factory;
     try {
@@ -53,18 +64,28 @@ export class SoundLibrary {
         }
       }
       this.read();
-    } catch (error) { this.warning = `Saved library could not be read: ${(error as Error).message} Original data is retained.`; }
+    } catch (error) {
+      this.warning = `Saved library could not be read: ${(error as Error).message} Original data is retained. Back up and repair the saved data, then reload before saving.`;
+      // A failed legacy migration must not create a v2 shelf on a later edit:
+      // that new key would hide the unread legacy entries on the next visit.
+      this.blockedReason = this.warning;
+    }
   }
   get available() { return this.store !== null; }
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   private read(): Shelf {
+    if (this.blockedReason) throw new Error(this.blockedReason);
     const raw = this.store?.getItem(SOUND_LIBRARY_KEY);
     if (!raw) return structuredClone(this.memory);
-    const data = parseJsonFile(raw) as Shelf;
-    if (!data || !Array.isArray(data.entries) || !Array.isArray(data.favorites) || data.entries.length > SOUND_LIBRARY_LIMIT || data.favorites.length > 512) throw new Error("Invalid saved library.");
+    return this.validateShelf(parseJsonFile(raw));
+  }
+  private validateShelf(input: unknown): Shelf {
+    const data = exactObject(input, ["entries", "favorites"], "Saved library");
+    if (!Array.isArray(data.entries) || !Array.isArray(data.favorites) || data.entries.length > SOUND_LIBRARY_LIMIT || data.favorites.length > 512) throw new Error("Invalid saved library.");
     const ids = new Set(this.factory.map(e => e.id));
     const blind = new Set(this.factory.map(e => auditionId(e.id)));
-    const entries = data.entries.map(row => {
+    const entries = data.entries.map(input => {
+      const row = exactObject(input, ["entry", "editable"], "Saved entry");
       const entry = parseEntry(row.entry);
       if (typeof row.editable !== "boolean" || ids.has(entry.id) || blind.has(auditionId(entry.id))) throw new Error("Duplicate or invalid saved ID.");
       ids.add(entry.id); blind.add(auditionId(entry.id));
@@ -74,12 +95,16 @@ export class SoundLibrary {
     return { entries, favorites: [...new Set(data.favorites)] };
   }
   private write(next: Shelf) {
+    if (this.blockedReason) throw new Error(this.blockedReason);
     if (next.entries.length > SOUND_LIBRARY_LIMIT) throw new Error("The shelf holds 192 saved sounds. Export a pack before removing sounds.");
+    // Validate migrations and writes before creating a key, including collisions
+    // with factory IDs and unsupported storage fields.
+    const validated = this.validateShelf(next);
     // Write first: quota failures cannot create a phantom save or partial pack.
-    const serialized = JSON.stringify(next);
+    const serialized = JSON.stringify(validated);
     parseJsonFile(serialized); // Same byte bound on writes and subsequent reads.
     if (this.store) this.store.setItem(SOUND_LIBRARY_KEY, serialized);
-    this.memory = next;
+    this.memory = validated;
     this.version++;
     this.listeners.forEach(fn => fn());
   }
@@ -96,7 +121,7 @@ export class SoundLibrary {
   }
   saveNew(sound: SoundDocument, metadata: PresetMetadata): PresetEntry {
     const next = this.read();
-    const entry = parseEntry({ id: `local:sound-${crypto.randomUUID()}`, version: 1, sound, metadata });
+    const entry = parseEntry({ id: createSoundId("local"), version: 1, sound, metadata });
     next.entries.push({ entry, editable: true }); this.write(next); return entry;
   }
   duplicate(id: string): PresetEntry {

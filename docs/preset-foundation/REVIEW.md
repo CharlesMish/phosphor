@@ -1,5 +1,7 @@
 # Preset foundation — review record, 1 November 2026
 
+For the subsequent verification, migration/HTTP-save fixes and refreshed contributor ZIP, see [the follow-up record](FOLLOWUP.md). The evidence below describes the original PR #18 pass.
+
 Review branch: `review/phosphor-preset-foundation-2026-11-01`. No production merge or deployment.
 
 ## Foundation decision

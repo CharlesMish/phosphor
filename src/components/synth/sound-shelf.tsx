@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import starterData from "../../presets/starter.pack.json" with { type: "json" };
-import { SoundLibrary, browserStorage, legacyEntry } from "@/lib/synth/sound-library";
+import { SoundLibrary, browserStorage, createSoundId, legacyEntry } from "@/lib/synth/sound-library";
 import { applySound, captureSound } from "@/lib/synth/sound-session";
 import { MAX_PACK_BYTES, parseJsonFile, parseSound, soundFromSession } from "@/lib/synth/sound-file";
 import { auditionId, CHARACTER, defaultMetadata, matchesPreset, parsePack, ROLES, type PresetEntry, type PresetMetadata, type Role } from "@/lib/synth/preset-pack";
@@ -78,7 +78,7 @@ export function SoundShelf() {
       let entries: PresetEntry[];
       if (input.format === "phosphor-preset-pack") entries = library.importPack(input);
       else {
-        const id = `imported:sound-${crypto.randomUUID()}`;
+        const id = createSoundId("imported");
         const entry = input.format === "phosphor-sound" && input.version === 1 ? legacyEntry(input, id) : {
           id, version: 1, metadata: defaultMetadata("Imported sound"),
           sound: input.format === "phosphor-session" ? soundFromSession(parseSessionDocument(input)) : parseSound(input),
