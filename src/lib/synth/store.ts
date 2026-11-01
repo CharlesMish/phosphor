@@ -76,7 +76,7 @@ export type { WavePreset, SpacePreset, DrivePreset, ChorusPreset };
 export type EditorDomain = "cycle" | "motion" | "drive" | "chorus" | "space";
 
 const HISTORY_LIMIT = 32;
-const INITIAL_SPACE_MIX = 0.38;
+export const INITIAL_SPACE_MIX = 0.38;
 
 type SpaceSnap = {
   contour: number[];
@@ -102,6 +102,7 @@ type SynthState = {
   attack: number;
   release: number;
   volume: number;
+  trimDb: number;
   cutoff: number;
   octave: number;
   activeNotes: number[];
@@ -147,6 +148,44 @@ type SynthState = {
   spaceHasDrawn: boolean;
   spacePast: SpaceSnap[];
   spaceFuture: SpaceSnap[];
+};
+
+export type SavedSessionPatch = {
+  domain: EditorDomain;
+  samples: number[];
+  preset: WavePreset | "custom";
+  hasDrawn: boolean;
+  slotA: number[] | null;
+  slotB: number[] | null;
+  morph: number;
+  morphLive: boolean;
+  attack: number;
+  release: number;
+  cutoff: number;
+  volume: number;
+  trimDb: number;
+  octave: number;
+  driveCurve: number[];
+  drivePreset: DrivePreset | "custom";
+  driveAmount: number;
+  driveSafe: boolean;
+  driveHasDrawn: boolean;
+  chorusCurve: number[];
+  chorusPreset: ChorusPreset | "custom";
+  chorusPeriod: number;
+  chorusMix: number;
+  spaceContour: number[];
+  spaceSeed: number;
+  spacePreset: SpacePreset | "custom";
+  spaceMetal: boolean;
+  spaceMix: number;
+  spaceSeconds: number;
+  spaceHasDrawn: boolean;
+  motionPath: number[];
+  motionBpm: number;
+  motionBeats: MotionBeats;
+  motionMode: MotionMode;
+  motionRoutes: MotionRoutes;
 };
 
 type SynthActions = {
@@ -207,6 +246,8 @@ type SynthActions = {
   setAudioReady: (ready: boolean) => void;
   markDrawn: () => void;
   markSpaceDrawn: () => void;
+  /** Replace the saved instrument state. Clears histories and leaves Motion stopped. */
+  replaceSavedSession: (patch: SavedSessionPatch) => void;
 };
 
 const initialSamples = generatePreset("sine");
@@ -355,6 +396,7 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   attack: 0.04,
   release: 0.28,
   volume: 0.72,
+  trimDb: 0,
   cutoff: 1,
   octave: 0,
   activeNotes: [],
@@ -1037,6 +1079,83 @@ export const useSynthStore = create<SynthState & SynthActions>((set, get) => {
   setAudioReady: (ready) => set({ audioReady: ready }),
   markDrawn: () => set({ hasDrawn: true }),
   markSpaceDrawn: () => set({ spaceHasDrawn: true }),
+  replaceSavedSession: (patch) => {
+    synth.allNotesOff();
+    const slotA = patch.slotA ? cloneWave(patch.slotA) : null;
+    const slotB = patch.slotB ? cloneWave(patch.slotB) : null;
+    set({
+      domain: patch.domain,
+      samples: cloneWave(patch.samples),
+      preset: patch.preset,
+      hasDrawn: patch.hasDrawn,
+      slotA,
+      slotB,
+      morph: patch.morph,
+      morphLive: patch.morphLive,
+      attack: patch.attack,
+      release: patch.release,
+      cutoff: patch.cutoff,
+      volume: patch.volume,
+      trimDb: patch.trimDb,
+      octave: patch.octave,
+      driveCurve: cloneTransfer(patch.driveCurve),
+      drivePreset: patch.drivePreset,
+      driveAmount: patch.driveAmount,
+      driveSafe: patch.driveSafe,
+      driveHasDrawn: patch.driveHasDrawn,
+      chorusCurve: cloneChorusCurve(patch.chorusCurve),
+      chorusPreset: patch.chorusPreset,
+      chorusPeriod: patch.chorusPeriod,
+      chorusMix: patch.chorusMix,
+      spaceContour: cloneContour(patch.spaceContour),
+      spaceSeed: patch.spaceSeed,
+      spacePreset: patch.spacePreset,
+      spaceMetal: patch.spaceMetal,
+      spaceMix: patch.spaceMix,
+      spaceSeconds: patch.spaceSeconds,
+      spaceHasDrawn: patch.spaceHasDrawn,
+      spaceView: buildSpaceView(patch.spaceContour, patch.spaceSeed),
+      motionPath: cloneMotionPath(patch.motionPath),
+      motionBpm: patch.motionBpm,
+      motionBeats: patch.motionBeats,
+      motionMode: patch.motionMode,
+      motionRoutes: {
+        cycle: { ...patch.motionRoutes.cycle },
+        driveAmount: { ...patch.motionRoutes.driveAmount },
+        chorusMix: { ...patch.motionRoutes.chorusMix },
+        spaceMix: { ...patch.motionRoutes.spaceMix },
+      },
+      motionPlaying: false,
+      motionProgress: 0,
+      motionRunId: get().motionRunId + 1,
+      activeNotes: [],
+      past: [],
+      future: [],
+      motionPast: [],
+      motionFuture: [],
+      drivePast: [],
+      driveFuture: [],
+      chorusPast: [],
+      chorusFuture: [],
+      spacePast: [],
+      spaceFuture: [],
+    });
+    synth.setParams({
+      attack: patch.attack,
+      release: patch.release,
+      volume: patch.volume,
+      trimDb: patch.trimDb,
+      cutoff: patch.cutoff,
+    });
+    synth.setDriveState(patch.driveCurve, patch.driveAmount, patch.driveSafe);
+    synth.setChorusCurve(patch.chorusCurve);
+    synth.setChorusPeriod(patch.chorusPeriod);
+    synth.setChorusMix(patch.chorusMix);
+    synth.setSpace(patch.spaceContour, patch.spaceSeed, patch.spaceMetal, patch.spaceSeconds);
+    synth.setSpaceMix(patch.spaceMix);
+    if (patch.morphLive && slotA && slotB) synth.setCycleMorph(slotA, slotB, patch.morph);
+    else synth.setWaveform(patch.samples, true);
+  },
   };
 });
 

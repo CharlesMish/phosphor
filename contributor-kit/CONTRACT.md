@@ -1,0 +1,24 @@
+# Sound, workspace and pack contract
+
+`phosphor-sound` **v2**, engine **phosphor-periodic-1**, normalization **dc-remove-peak-0.9-endpoints-linear-blend** is the canonical DSP document. `canonical.sound.json` is an exported, validator-accepted example. `src/lib/synth/sound-file.ts` and the reused `session-file.ts` validators are executable authority. Unknown fields at any DSP level, unsupported versions/engines/normalization, wrong array sizes, non-finite/out-of-range numbers and inconsistent morph display samples are rejected before live state changes.
+
+The DSP payload contains cycle samples, raw A/B endpoints, morph state, attack/release/filter, authored trim, effect curves and amounts, Space seed/Metal/length, and Motion path/routes/ranges/mode/beat length. It contains no performance, name, author, tags, volume, octave, active editor, visual treatment or transport BPM. Supported preset-shape labels never regenerate the arrays on load; the arrays are authoritative.
+
+`phosphor-preset-pack` v1 wraps 1–48 entries with one namespace. Each entry has `id` (`namespace:slug`), positive integer `version`, `metadata`, and `sound`. IDs and neutral audition labels must be unique. Packs are limited to 4 MB before JSON parsing. Pack import validates every entry before installing anything and rejects collisions with any installed ID. Factory/contributed originals are protected. Save as new and Duplicate allocate new local UUID IDs; rename preserves the ID and increments its version. Display-name equality never implies replacement. Pack metadata is never read by the engine.
+
+`metadata.character` uses the exact enums exported by `preset-pack.ts`. `range` is a two-element MIDI interval. `recommendedBpm` is advisory; only the explicit tempo button adopts it. `measurements` and `listeningNotes` are separate text evidence arrays, not inferred character ratings. Schema acceptance does not promote `validation` to listening-reviewed. Author truthfulness is not machine-provable.
+
+Sound loading stops loop/Motion, clears physical key ownership, uses a 15 ms output fade before installing shared settings and a 30 ms fade-in, then leaves playback stopped. Completed take events/bars, tempo, monitor volume, octave, current editor and visual treatment are retained. Histories for replaced shapes are cleared. Loading during an unfinished recording is refused before Stop can discard it. A demo creates a separate session object and never installs its notes in the looper.
+
+## Compatibility
+
+- PR #15 `phosphor-sound` v1 imports via the preserved legacy validator plus strict unsupported-field checks. Raw A/B endpoints remain untouched; a stale v1 display blend is recomputed from them. Legacy `voice.volume` is a workspace monitor value and is not adopted on sound load. Legacy BPM becomes a metadata recommendation. Startup restoration of the old current-sound key restores those workspace settings deliberately.
+- PR #17 `phosphor-session` v1 imports as session v2 with `output.trimDb = 0`. Full Session/Open is intentionally different from Sounds/Import: it restores the whole workspace. Sounds/Import extracts only the sound, retaining a tempo recommendation in metadata.
+- New session storage uses `phosphor.session.v2`, falling back to read-only `phosphor.session.v1` and `phosphor.sound.current.v1`. New shelf storage uses `phosphor.sounds.v2`; `phosphor.sounds.v1` is a read-only migration source. Originals are not removed. Unsupported saved library data blocks writes rather than being silently rewritten away; export/back up the old data before repair.
+- Exports write current versions only. Old branches do not understand v2 files. Keep the original legacy files when exchanging with those branches. PR #16 WAV files are audio deliverables, not a preset interchange format; its separate seamless-loop algorithm is not installed here.
+
+## Demo data and render limitations
+
+`demos.json` defines 2-bar performances at reference 100 BPM with a 1-beat leading rest. Bass C2–G2, keys C3–E4, lead C4–C5, pad C3–D4, and short-note C3–Eb4 are controlled role fixtures, using MIDI C4=60. Texture/wildcard fixtures are also supplied. The loader defaults to the current transport BPM; use the same BPM across a comparison and keep it in the notes. Tails include release, relevant Space length and 54 ms graph allowance. No rest/tail trimming or normalization is done.
+
+An offline render uses a fresh production SynthEngine. It includes shared voice rebalance, filter, Drive, Chorus, Space, authored trim, monitor and output safety. Audition plays that exact buffer. Live keyboard timing, existing effect tails, device sample rate and live scheduler phase differ; no live/file equivalence is asserted. Cancellation lets OfflineAudioContext finish silently and rejects its result; there is no unsupported `close()` call on an offline context.

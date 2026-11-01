@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { SoundShelf } from "./sound-shelf";
+import { SessionMenu } from "./session-menu";
 import { TreatmentSelector } from "./treatment-selector";
 import { MotionShapes } from "./motion-shapes";
 import { MotionRoutes } from "./motion-routes";
@@ -584,6 +586,8 @@ export function HeaderBar() {
           <span aria-hidden className={cn("size-1.5 rounded-full", audioReady ? "bg-status" : "bg-faint")} />
           {audioReady ? (active > 0 ? "Live" : "Ready") : "Standby"}
         </span>
+        <SoundShelf />
+            <SessionMenu />
         <TreatmentSelector />
       </div>
     </header>

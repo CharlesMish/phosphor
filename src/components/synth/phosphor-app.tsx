@@ -10,6 +10,8 @@ import { MotionPlaybackController } from "./motion-playback";
 import { Oscilloscope } from "./oscilloscope";
 import { NoteLooperControls } from "./note-looper";
 import { connectLooperTempo, panicPerformance, performanceInput } from "@/lib/synth/looper-runtime";
+import { stopPhraseAudition, invalidatePhraseRenders } from "@/lib/synth/phrase-export";
+import { startSessionAutosave } from "@/lib/synth/session-apply";
 import { Piano } from "./piano";
 import { HeaderBar, KeyboardControls, PresetBar, SideParams } from "./controls";
 import { EffectsSummary } from "./effects-summary";
@@ -80,6 +82,7 @@ export function PhosphorApp() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Escape") {
         e.preventDefault();
+        invalidatePhraseRenders(); stopPhraseAudition();
         panicPerformance();
         return;
       }
@@ -116,6 +119,7 @@ export function PhosphorApp() {
 
     const panic = () => {
       held.clear();
+      invalidatePhraseRenders(); stopPhraseAudition();
       panicPerformance();
     };
 
@@ -128,12 +132,14 @@ export function PhosphorApp() {
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", panic);
     document.addEventListener("visibilitychange", onVisibility);
+    const stopAutosave = startSessionAutosave();
 
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", panic);
       document.removeEventListener("visibilitychange", onVisibility);
+      stopAutosave();
       panic();
       unreset();
       untempo();

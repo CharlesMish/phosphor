@@ -119,6 +119,7 @@ export type SynthParams = {
   attack: number;
   release: number;
   volume: number;
+  trimDb: number;
   cutoff: number;
 };
 
@@ -210,6 +211,11 @@ export class SynthEngine {
   private chorusPeriod = CHORUS_DEFAULT_PERIOD;
   private chorusCurve: number[] | null = null;
   private master: GainNode | null = null;
+  private soundTrim: GainNode | null = null;
+  private auditionGain: GainNode | null = null;
+  private switchGain: GainNode | null = null;
+  private switching = false;
+  private auditionDb = 0;
   private analyser: AnalyserNode | null = null;
   private dryGain: GainNode | null = null;
   private wetIn: GainNode | null = null;
@@ -231,6 +237,7 @@ export class SynthEngine {
     attack: 0.04,
     release: 0.28,
     volume: 0.72,
+    trimDb: 0,
     cutoff: 1,
   };
   private spaceMix = 0.38;
@@ -258,6 +265,8 @@ export class SynthEngine {
   private preSafetyAnalyser: AnalyserNode | null = null;
   private safety: WaveShaperNode | null = null;
   private rebalanceTarget = 1;
+  /** Offline renders retire voices on the renderer's ticks, not oscillator ended events. */
+  private offline = false;
   ready = false;
 
   onVoices(fn: (active: number[]) => void): () => void {
@@ -292,8 +301,22 @@ export class SynthEngine {
     return analyserPeak(this.preSafetyAnalyser);
   }
 
+  /**
+   * Build the production graph on an OfflineAudioContext. The caller configures
+   * the sound after this returns. An offline engine is never resumed from a
+   * gesture and is discarded after rendering; it is not the live instrument.
+   */
+  attachOfflineContext(ctx: OfflineAudioContext) {
+    if (this.ctx) throw new Error("This engine already has an audio context.");
+    this.ctx = ctx as unknown as AudioContext;
+    this.offline = true;
+    this.buildGraph();
+    this.ready = true;
+  }
+
   /** Must be called synchronously inside a user gesture. */
   unlock(): boolean {
+    if (this.offline) return true;
     const Ctor = AudioContextCtor();
     if (!Ctor) return false;
     if (!this.ctx) {
@@ -316,9 +339,47 @@ export class SynthEngine {
     if (this.master && partial.volume !== undefined) {
       this.master.gain.setTargetAtTime(volumeToGain(this.params.volume), now, 0.03);
     }
+    if (this.soundTrim && partial.trimDb !== undefined) {
+      this.soundTrim.gain.setTargetAtTime(10 ** (this.params.trimDb / 20), now, 0.015);
+    }
     if (this.filter && partial.cutoff !== undefined) {
       this.filter.frequency.setTargetAtTime(cutoffHz(this.params.cutoff), now, 0.03);
     }
+  }
+
+  /** Fade the old graph before changing shared filters/effects. Input is blocked briefly. */
+  async beginSoundSwitch() {
+    this.switching = true;
+    this.allNotesOff();
+    const ctx = this.ctx;
+    const gain = this.switchGain?.gain;
+    if (!ctx || !gain) return;
+    const end = ctx.currentTime + 0.015;
+    gain.cancelScheduledValues(ctx.currentTime);
+    gain.setValueAtTime(gain.value, ctx.currentTime);
+    gain.linearRampToValueAtTime(0, end);
+    const deadline = Date.now() + 200;
+    while (ctx.state === "running" && ctx.currentTime < end && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    gain.cancelScheduledValues(ctx.currentTime);
+    gain.setValueAtTime(0, ctx.currentTime);
+  }
+
+  finishSoundSwitch() {
+    this.switching = false;
+    if (this.ctx && this.switchGain) {
+      const now = this.ctx.currentTime;
+      this.switchGain.gain.cancelScheduledValues(now);
+      this.switchGain.gain.setValueAtTime(0, now);
+      this.switchGain.gain.linearRampToValueAtTime(1, now + 0.03);
+    }
+  }
+
+  /** Listening-only attenuation, after safety. Never part of a sound or export. */
+  setAuditionTrim(db: number) {
+    this.auditionDb = Number.isFinite(db) ? Math.max(-24, Math.min(0, db)) : 0;
+    this.auditionGain?.gain.setTargetAtTime(10 ** (this.auditionDb / 20), this.ctx?.currentTime ?? 0, 0.02);
   }
 
   setSpaceMix(mix: number) {
@@ -562,6 +623,7 @@ export class SynthEngine {
   }
 
   noteOn(midi: number) {
+    if (this.switching) return;
     if (!this.unlock() || !this.ctx || !this.filter || !this.wave) return;
     const existing = this.voices.get(midi);
     if (existing && this.isHeld(existing)) return;
@@ -739,7 +801,7 @@ export class SynthEngine {
       /* already stopped */
     }
     this.pendingSpace = this.space;
-    void this.ctx?.close();
+    if (this.ctx && this.ctx.state !== "closed") void this.ctx.close();
     this.ctx = null;
     this.filter = null;
     this.drive = null;
@@ -765,6 +827,9 @@ export class SynthEngine {
     this.wetB = null;
     this.sum = null;
     this.master = null;
+    this.soundTrim = null;
+    this.auditionGain = null;
+    this.switchGain = null;
     this.preSafetyAnalyser = null;
     this.safety = null;
     this.analyser = null;
@@ -872,6 +937,12 @@ export class SynthEngine {
     const sum = ctx.createGain();
     sum.gain.value = 1;
 
+    const soundTrim = ctx.createGain();
+    soundTrim.gain.value = 10 ** (this.params.trimDb / 20);
+    const switchGain = ctx.createGain();
+    switchGain.gain.value = 1;
+    const auditionGain = ctx.createGain();
+    auditionGain.gain.value = 10 ** (this.auditionDb / 20);
     const master = ctx.createGain();
     master.gain.value = volumeToGain(this.params.volume);
 
@@ -904,11 +975,14 @@ export class SynthEngine {
     dryGain.connect(sum);
     wetA.connect(sum);
     wetB.connect(sum);
-    sum.connect(master);
+    sum.connect(soundTrim);
+    soundTrim.connect(master);
     master.connect(preSafetyAnalyser);
     preSafetyAnalyser.connect(safety);
     safety.connect(analyser);
-    analyser.connect(ctx.destination);
+    analyser.connect(switchGain);
+    switchGain.connect(auditionGain);
+    auditionGain.connect(ctx.destination);
 
     this.filter = filter;
     this.drive = drive;
@@ -934,6 +1008,9 @@ export class SynthEngine {
     this.wetB = wetB;
     this.sum = sum;
     this.master = master;
+    this.soundTrim = soundTrim;
+    this.auditionGain = auditionGain;
+    this.switchGain = switchGain;
     this.preSafetyAnalyser = preSafetyAnalyser;
     this.safety = safety;
     this.analyser = analyser;
@@ -1268,11 +1345,14 @@ export class SynthEngine {
       onEnded();
     };
     for (const oscillator of source.oscillators) {
-      oscillator.onended = finishOscillator;
+      // Offline, ended events arrive whenever the main thread gets to them while
+      // rendering runs ahead, so their audio time is arbitrary. Phrase rendering
+      // retires voices at its fixed ticks via refreshScheduledVoices.
+      if (!this.offline) oscillator.onended = finishOscillator;
       try {
         oscillator.stop(when);
       } catch {
-        finishOscillator();
+        if (!this.offline) finishOscillator();
       }
     }
   }
@@ -1297,7 +1377,9 @@ export class SynthEngine {
     this.stopVoiceSource(voice.source, now + release + 0.03, () => {
       this.finishVoice(watch);
     });
-    window.setTimeout(() => this.finishVoice(watch), (release + 0.08) * 1000);
+    if (!this.offline && typeof window !== "undefined") {
+      window.setTimeout(() => this.finishVoice(watch), (release + 0.08) * 1000);
+    }
     this.rebalance(now);
     this.emitVoices();
   }
@@ -1312,7 +1394,9 @@ export class SynthEngine {
     this.stopVoiceSource(voice.source, now + seconds + 0.02, () => {
       this.disconnectVoice(voice);
     });
-    window.setTimeout(() => this.disconnectVoice(voice), (seconds + 0.08) * 1000);
+    if (!this.offline && typeof window !== "undefined") {
+      window.setTimeout(() => this.disconnectVoice(voice), (seconds + 0.08) * 1000);
+    }
   }
 
   private finishVoice(voice: Voice) {
