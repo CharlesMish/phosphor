@@ -7,7 +7,7 @@ import { parseSound, parseJsonFile, soundFromSession, soundToSession } from "./s
 import { snapshotSound } from "./legacy-sound.ts";
 import { applySound, captureSound } from "./sound-session.ts";
 import { auditionId, matchesPreset, parsePack, defaultMetadata } from "./preset-pack.ts";
-import { SoundLibrary, SOUND_LIBRARY_KEY, LEGACY_LIBRARY_KEY } from "./sound-library.ts";
+import { SoundLibrary, SOUND_LIBRARY_KEY, LEGACY_LIBRARY_KEY, createSoundId } from "./sound-library.ts";
 import { noteLooper, performanceInput } from "./looper-runtime.ts";
 import { useSynthStore } from "./store.ts";
 import { synth, cycleMorphSamples } from "./engine.ts";
@@ -118,6 +118,48 @@ it('retains old shelf data on migration/quota failure and uses stable migrated I
  assert.match(new SoundLibrary(broken,[]).warning,/duplicate/);assert.equal(broken.getItem(SOUND_LIBRARY_KEY),null);
  const full=new SoundLibrary({getItem:()=>null,setItem:()=>{throw new Error('quota');},removeItem:()=>{}},[]);
  assert.throws(()=>full.saveNew(pack.entries[0].sound,defaultMetadata('No')));assert.equal(full.list().length,0);
+});
+it('blocks all writes after a rejected legacy migration without hiding the original shelf', () => {
+ const storage=memory();const legacy=snapshotSound(useSynthStore.getState(),'Old');
+ const original=JSON.stringify([{id:'duplicate',sound:legacy},{id:'duplicate',sound:legacy}]);
+ storage.setItem(LEGACY_LIBRARY_KEY,original);
+ const shelf=new SoundLibrary(storage,pack.entries);
+ assert.match(shelf.warning,/duplicate/);
+ for(const mutate of [
+  ()=>shelf.saveNew(pack.entries[0].sound,defaultMetadata('New')),
+  ()=>shelf.duplicate(pack.entries[0].id),
+  ()=>shelf.favorite(pack.entries[0].id),
+  ()=>shelf.remove('legacy:missing'),
+ ]) assert.throws(mutate,/could not be read/);
+ assert.equal(storage.getItem(SOUND_LIBRARY_KEY),null);
+ assert.equal(storage.getItem(LEGACY_LIBRARY_KEY),original);
+ assert.equal(shelf.list().length,4);
+ assert.equal(shelf.exportEntry(pack.entries[0].id).entries.length,1);
+});
+it('allocates namespaced UUIDs without requiring the secure-context randomUUID API', () => {
+ const random = { getRandomValues: <T extends ArrayBufferView | null>(array: T): T => {
+  assert.ok(array instanceof Uint8Array); array.fill(255); return array;
+ }};
+ assert.equal(createSoundId('local',random),'local:sound-ffffffff-ffff-4fff-bfff-ffffffffffff');
+ const ids=Array.from({length:64},()=>createSoundId('imported'));
+ assert.equal(new Set(ids).size,64);
+ for(const id of ids) assert.match(id,/^imported:sound-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+ assert.throws(()=>createSoundId('local',{} as Crypto),/HTTPS or localhost/);
+});
+it('rejects unsupported saved shelf fields and legacy ID collisions before writing', () => {
+ const storage=memory();
+ const original=JSON.stringify({entries:[],favorites:[],futureData:{sound:'keep'}});
+ storage.setItem(SOUND_LIBRARY_KEY,original);
+ const shelf=new SoundLibrary(storage,pack.entries);
+ assert.match(shelf.warning,/unsupported/);
+ assert.throws(()=>shelf.saveNew(pack.entries[0].sound,defaultMetadata('New')));
+ assert.equal(storage.getItem(SOUND_LIBRARY_KEY),original);
+ const other=memory();const legacy=snapshotSound(useSynthStore.getState(),'Old');
+ other.setItem(LEGACY_LIBRARY_KEY,JSON.stringify([{id:'old-id',sound:legacy}]));
+ const collision=clone(pack.entries[0]);collision.id=`legacy:import-${auditionId('old-id').slice(2).toLowerCase()}`;
+ const blocked=new SoundLibrary(other,[collision]);
+ assert.match(blocked.warning,/Duplicate/);
+ assert.equal(other.getItem(SOUND_LIBRARY_KEY),null);
 });
 it('searches independent character axes and keeps controlled demo timing outside sound data', () => {
  assert.ok(matchesPreset(pack.entries[1],'keys','warm keys'));

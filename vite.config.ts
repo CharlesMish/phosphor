@@ -5,6 +5,8 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   base: "/phosphor/",
+  // Allow the exact managed preview host in addition to Vite's localhost defaults.
+  server: { allowedHosts: ["terminal.local"] },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
