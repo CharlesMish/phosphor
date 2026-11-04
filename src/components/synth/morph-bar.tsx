@@ -92,25 +92,19 @@ export function MorphBar() {
           onValueCommit={(v) => setMorph(v[0] ?? morph, true)}
           aria-label={
             engaged
-              ? "Morph A to B. Hold K on the keyboard, then drag."
+              ? "Morph A to B. Drag the slider."
               : armed
                 ? "Morph A to B. Drag to return to the A/B blend."
                 : "Morph A to B"
           }
-          title={
-            engaged
-              ? "Hold K on the keyboard, then drag with the mouse"
-              : armed
-                ? "Drag to morph A into B"
-                : "Capture A and B to morph"
-          }
+          title={armed ? "Drag to morph A into B" : "Capture A and B to morph"}
         />
         {engaged && (
           <span
             className="hidden shrink-0 font-mono text-xs uppercase tracking-wider text-faint sm:block"
-            title="Hold K on the keyboard, then drag morph with the mouse"
+            title="Drag to morph A into B"
           >
-            Hold K
+            Drag
           </span>
         )}
       </div>
