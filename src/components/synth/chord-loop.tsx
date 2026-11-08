@@ -55,11 +55,25 @@ export function ChordLoopControls() {
   }, [doc.chords, editing]);
   useEffect(() => () => abortRef.current?.abort(), []);
   // Esc, window blur and hidden tabs discard a render in progress, as they do phrase renders.
-  useEffect(() => onPanic(() => {
-    const running = abortRef.current;
-    if (!running || running.signal.aborted) return;
-    running.abort(); setBusy(false); setStatus("Render discarded.");
-  }), []);
+  useEffect(() => {
+    const discard = (why: string) => {
+      const running = abortRef.current;
+      if (!running || running.signal.aborted) return;
+      running.abort(); setBusy(false); setStatus(why);
+    };
+    const offPanic = onPanic(() => discard("Render discarded."));
+    // Starting the note loop or the live chord loop also discards a pending
+    // render, so a finished audition can never start over the new take.
+    const offLooper = noteLooper.subscribe(() => {
+      const state = noteLooper.getSnapshot().state;
+      if (state === "recording") discard("Render discarded: the note loop started recording.");
+      else if (state === "playing") discard("Render discarded: the note loop started playing.");
+    });
+    const offChords = chordLoop.subscribe(() => {
+      if (chordLoop.getSnapshot().playing) discard("Render discarded: the chord loop started playing.");
+    });
+    return () => { offPanic(); offLooper(); offChords(); };
+  }, []);
   // Newer loop messages replace an older render status.
   useEffect(() => setStatus(""), [snap.message, doc]);
 
@@ -89,6 +103,9 @@ export function ChordLoopControls() {
       const now = chordLoop.getSnapshot().doc;
       const after = serializeSession(captureSession()) + JSON.stringify({ chords: now.chords, transpose: now.transpose, times: now.exportTimes, ending: now.ending });
       if (abort.signal.aborted || before !== after) throw new DOMException("stale", "AbortError");
+      // Belt and braces: never start an audition or a download over a live transport.
+      const looping = noteLooper.getSnapshot().state;
+      if (looping === "recording" || looping === "playing" || chordLoop.getSnapshot().playing) throw new DOMException("busy", "AbortError");
       const name = exportFileName(request.chords, request.transpose, session.motion.bpm, result.plan.times, request.ending);
       if (mode === "export") {
         download(encodeChordLoopWav(session, request, result), name);

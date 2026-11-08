@@ -43,7 +43,7 @@ export type ChordLoopSnapshot = {
   message: string;
 };
 
-type Pass = { index: number; start: number; end: number; beat: number; chords: LoopChord[]; transpose: number };
+type Pass = { index: number; start: number; end: number; beat: number; chords: LoopChord[]; transpose: number; scheduled: Set<string> };
 
 function storage(): Pick<Storage, "getItem" | "setItem"> | null {
   try { return globalThis.localStorage ?? null; } catch { return null; }
@@ -58,7 +58,6 @@ export class ChordLoopController {
   private run = RUN_BASE;
   private timer: number | null = null;
   private passes: Pass[] = [];
-  private scheduled = new Set<string>();
   private auditionTimer: number | null = null;
 
   constructor() {
@@ -207,7 +206,6 @@ export class ChordLoopController {
     if (!ctx) return;
     this.run += 1;
     synth.beginScheduledRun(this.run);
-    this.scheduled.clear();
     const start = ctx.currentTime + 0.05;
     this.passes = [this.makePass(0, start)];
     this.update({ playing: true, pending: false, chordIndex: 0, progress: 0, message: "" });
@@ -229,7 +227,6 @@ export class ChordLoopController {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
     this.passes = [];
-    this.scheduled.clear();
     if (this.snapshot.playing || message) this.update({ playing: false, chordIndex: -1, progress: 0, pending: false, message: message || this.snapshot.message });
   }
 
@@ -237,7 +234,7 @@ export class ChordLoopController {
     const { doc } = this.snapshot;
     const beat = beatDurationSeconds(useSynthStore.getState().motionBpm);
     const chords = doc.chords.map((c) => ({ ...c, notes: c.notes.slice() }));
-    return { index, start, end: start + loopBeats(chords) * beat, beat, chords, transpose: doc.transpose };
+    return { index, start, end: start + loopBeats(chords) * beat, beat, chords, transpose: doc.transpose, scheduled: new Set() };
   }
 
   private tick(run: number) {
@@ -261,17 +258,17 @@ export class ChordLoopController {
         if (at <= now + LOOP_LOOKAHEAD && end > now) {
           for (const midi of sounding(chord.notes, pass.transpose)) {
             const id = `${run}:${pass.index}:${index}:${midi}`;
-            if (this.scheduled.has(id) || !midiOK(midi)) continue;
+            if (pass.scheduled.has(id) || !midiOK(midi)) continue;
             // Long main-thread stalls skip missed attacks rather than bursting old notes.
             if (at < now - LOOP_TICK_MS / 1000) continue;
             synth.scheduleNote(run, id, midi, at, end);
-            this.scheduled.add(id);
+            pass.scheduled.add(id);
           }
         }
         at = end;
       });
     }
-    // Forget passes whose notes have all been released.
+    // Forget passes (and their note IDs) once every note has been released.
     this.passes = this.passes.filter((p) => p.end > now - 5);
     synth.refreshScheduledVoices();
     const current = this.passes.find((p) => p.start <= now && now < p.end) ?? this.passes[0];

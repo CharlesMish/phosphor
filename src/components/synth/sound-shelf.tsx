@@ -139,7 +139,7 @@ export function SoundShelf() {
         <label className="flex items-center gap-2 text-xs">Listening trim {trim} dB<input aria-label="Listening trim" type="range" min={-24} max={0} step={1} value={trim} onChange={e => { const db = +e.target.value; setTrim(db); synth.setAuditionTrim(db); setPhraseAuditionTrim(db); }} /></label>
         <span className="text-xs text-muted">Listening trim affects audition and free playing only. WAV keeps authored trim. Motion starts only on request.</span>
       </div>
-      {!blind && <form className="grid gap-2 border-t border-border pt-2" onSubmit={e => { e.preventDefault(); void save(); }}>
+      {!blind && <form noValidate className="grid gap-2 border-t border-border pt-2" onSubmit={e => { e.preventDefault(); void save(); }}>
         <div className="flex gap-2"><input aria-label="Sound name" className={`${field} flex-1`} maxLength={80} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /><Button type="submit" variant="solid" disabled={busy}>Save as new</Button></div>
         <details><summary className="cursor-pointer text-sm">Author tags and instructions</summary><div className="mt-2 grid grid-cols-2 gap-2 text-xs">
           {ROLES.map(r => <label key={r}><input type="checkbox" checked={draft.roles.includes(r)} onChange={e => setDraft({ ...draft, roles: e.target.checked ? [...draft.roles, r] : draft.roles.filter(v => v !== r) })} /> {r}</label>)}
@@ -148,7 +148,7 @@ export function SoundShelf() {
           <label className="grid gap-1">Playing<select className={field} value={draft.playing} onChange={e => setDraft({ ...draft, playing: e.target.value as PresetMetadata["playing"] })}>{["sustained", "short-note", "both"].map(v => <option key={v}>{v}</option>)}</select></label>
           {[0,1].map(i => <label key={i}>MIDI {i ? "high" : "low"}<input className={field} type="number" min={0} max={127} value={draft.range[i]} onChange={e => { const range: [number,number] = [...draft.range]; range[i] = +e.target.value; setDraft({ ...draft, range }); }} /></label>)}
           <label className="grid gap-1">Suggested BPM<input className={field} type="number" min={40} max={240} value={draft.recommendedBpm ?? ""} onChange={e => setDraft({ ...draft, recommendedBpm: e.target.value ? +e.target.value : null })} /></label>
-          <label className="grid gap-1">Authored trim (dB)<input aria-label="Authored trim" className={field} type="number" min={-48} max={0} step={0.1} value={state.trimDb} onChange={e => state.setParam("trimDb", Math.max(-48, Math.min(0, +e.target.value)))} /></label>
+          <label className="grid gap-1">Authored trim (dB)<input aria-label="Authored trim" className={field} type="number" min={-48} max={0} step="any" value={state.trimDb} onChange={e => state.setParam("trimDb", Math.max(-48, Math.min(0, +e.target.value)))} /></label>
           <label className="col-span-2 grid gap-1">Try this<input className={field} value={draft.tryThis} onChange={e => setDraft({ ...draft, tryThis: e.target.value })} /></label>
           <label className="col-span-2 grid gap-1">Release behavior<input className={field} value={draft.release} onChange={e => setDraft({ ...draft, release: e.target.value })} /></label>
         </div></details>

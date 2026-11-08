@@ -20,6 +20,18 @@ if(trackedChanges.length)throw new Error(`Commit kit source changes before pinni
 const example=parseSound(JSON.parse(readFileSync('contributor-kit/canonical.sound.json','utf8')));
 const neutral=parsePack({format:'phosphor-preset-pack',version:1,namespace:'neutral',entries:[{id:'neutral:canonical-example',version:1,metadata:{...defaultMetadata('Neutral technical example'),contributor:'Shared technical kit',provenance:'Same unvoiced starting example for every contributor.',roles:['keys','wildcard']},sound:example}]});
 mkdirSync(join(stage,'src/presets'),{recursive:true});writeFileSync(join(stage,'src/presets/starter.pack.json'),JSON.stringify(neutral,null,2)+'\n');
+// The app's built-ins (src/presets/factory.ts) are contributors' sounds, which the kit omits.
+// Generate the same module backed by the single neutral example so the kit typechecks and builds.
+writeFileSync(join(stage,'src/presets/factory.ts'),`import starterData from "./starter.pack.json" with { type: "json" };
+import { parsePack, type PresetEntry } from "@/lib/synth/preset-pack";
+
+/** Contributor kit: the shared neutral example is the only built-in sound. */
+export const RETIRED_FACTORY_IDS: readonly string[] = [];
+
+export function factoryEntries(): PresetEntry[] {
+  return parsePack(starterData).entries;
+}
+`);
 for (const name of ['README.md','CAPABILITIES.md','CONTRACT.md']) cpSync('contributor-kit/'+name,join(stage,name));
 const pkg=JSON.parse(readFileSync(join(stage,'package.json'),'utf8'));
 pkg.scripts=Object.fromEntries(Object.entries(pkg.scripts).filter(([k])=>['dev','build','preview','typecheck','presets:validate'].includes(k)));

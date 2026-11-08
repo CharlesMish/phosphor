@@ -68,6 +68,36 @@ try {
  check('reload retains library and favorite',await page.locator('[aria-label="Preset list"] li').count()===11);
  const restored=await page.evaluate(async()=>{const {captureSession}=await import('/phosphor/src/lib/synth/session-apply.ts');return captureSession();});
  check('reload restores patch trim and take stopped',restored.output.trimDb===-7.2&&restored.output.volume===.4&&restored.noteLoop.events.length===2);
+ // A valid sound with an authored trim between tenths of a dB saves as a new copy and keeps the trim.
+ const trimPack=await page.evaluate(async()=>{
+  const {defaultMetadata}=await import('/phosphor/src/lib/synth/preset-pack.ts');
+  const sound=await (await fetch('/phosphor/contributor-kit/canonical.sound.json')).json();sound.voice.trimDb=-7.25;
+  return JSON.stringify({format:'phosphor-preset-pack',version:1,namespace:'qa-trim',entries:[{id:'qa-trim:quarter-db',version:1,metadata:{...defaultMetadata('Quarter dB trim'),contributor:'QA',provenance:'Browser check for fractional trims.',roles:['keys']},sound}]});
+ });
+ await page.getByLabel('Import preset file').setInputFiles({name:'qa-trim.pack.json',mimeType:'application/json',buffer:Buffer.from(trimPack)});
+ await page.getByRole('status').filter({hasText:'imported'}).waitFor();
+ await page.getByRole('button',{name:'Load Quarter dB trim'}).click();await page.getByRole('status').filter({hasText:'loaded. Take'}).waitFor();
+ await page.getByLabel('Sound name',{exact:true}).fill('Quarter copy');await page.getByRole('button',{name:'Save as new',exact:true}).click();
+ await page.getByRole('status').filter({hasText:'Saved as a new sound'}).waitFor({timeout:5000});
+ const quarter=await page.evaluate(()=>JSON.parse(localStorage.getItem('phosphor.sounds.v2')).entries.map(r=>r.entry??r).find(e=>e.metadata.name==='Quarter copy'));
+ check('fractional authored trim saves as a new copy and keeps -7.25 dB',quarter?.sound.voice.trimDb===-7.25,quarter?.sound.voice);
+ await page.getByRole('button',{name:'Close',exact:true}).click();
+ // A chord-loop audition still rendering when a note-loop recording starts must never play over the take.
+ await page.evaluate(async()=>{
+  const {chordLoop}=await import('/phosphor/src/lib/synth/chord-loop-runtime.ts');
+  chordLoop.clear();chordLoop.addChord([57,61,64]);chordLoop.addChord([55,59,62]);chordLoop.setExport(8,'loop');
+  window.__bufferStarts=0;const start=AudioBufferSourceNode.prototype.start;
+  AudioBufferSourceNode.prototype.start=function(...args){window.__bufferStarts++;return start.apply(this,args);};
+ });
+ await page.getByRole('button',{name:'Clear note loop'}).click();await page.getByLabel('Note loop length').selectOption('16');
+ await page.getByRole('button',{name:'Audition chord loop render'}).click();
+ await page.getByRole('button',{name:'Record note loop'}).click();
+ await page.locator('[aria-label="Chord loop"] > p[role="status"]').filter({hasText:'Render discarded'}).waitFor({timeout:5000});
+ await page.waitForTimeout(8000);
+ const overlap=await page.evaluate(async()=>{const {noteLooper}=await import('/phosphor/src/lib/synth/looper-runtime.ts');return {starts:window.__bufferStarts,state:noteLooper.getSnapshot().state};});
+ check('starting a recording discards a pending chord audition',overlap.starts===0&&overlap.state==='recording',overlap);
+ await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Sounds',exact:true}).click();
  // Physical owner reset, real engine notes, and an output probe during rapid switches.
  await page.getByRole('button',{name:'Close',exact:true}).click();
  const switching=await page.evaluate(async()=>{
