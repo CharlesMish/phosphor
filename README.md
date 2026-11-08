@@ -52,7 +52,13 @@ npm run build
 
 `main` deploys automatically to GitHub Pages through `.github/workflows/pages.yml`.
 
-The Vite base path is `/phosphor/`, matching the repository Pages URL.
+Production asset URLs are relative, so the same `dist/` runs at the GitHub
+Pages project path and at the root of a custom domain.
+
+For Cloudflare Workers Builds, connect this repository's `main` branch to
+the `phosphor` Worker. Use `npm run build` as the build command and
+`npx wrangler deploy` as the deploy command. Wrangler serves the static
+files from `dist/`. Set the hostname under the Worker’s **Domains & Routes**.
 
 ## Development rule
 
