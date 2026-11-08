@@ -97,6 +97,19 @@ try {
  const overlap=await page.evaluate(async()=>{const {noteLooper}=await import('/phosphor/src/lib/synth/looper-runtime.ts');return {starts:window.__bufferStarts,state:noteLooper.getSnapshot().state};});
  check('starting a recording discards a pending chord audition',overlap.starts===0&&overlap.state==='recording',overlap);
  await page.keyboard.press('Escape');
+ // An audition that is already playing fades out when Record or the live chord loop takes over.
+ const chordStatus=page.locator('[aria-label="Chord loop"] > p[role="status"]');
+ const audible=async()=>page.evaluate(async()=>{const {currentPhraseAudition}=await import('/phosphor/src/lib/synth/phrase-export.ts');const {noteLooper}=await import('/phosphor/src/lib/synth/looper-runtime.ts');return {playing:currentPhraseAudition()!==null,state:noteLooper.getSnapshot().state};});
+ await page.evaluate(async()=>{const {chordLoop}=await import('/phosphor/src/lib/synth/chord-loop-runtime.ts');chordLoop.setExport(2,'loop');});
+ for(const [takeover,button,why,state] of [['Record','Record note loop','the note loop started recording','recording'],['chord Play','Play chord loop','the chord loop started playing',null]]){
+  await page.getByRole('button',{name:'Audition chord loop render'}).click();
+  await chordStatus.filter({hasText:'Playing the rendered loop file'}).waitFor({timeout:60000});
+  const during=await audible();
+  await page.getByRole('button',{name:button}).click();await page.waitForTimeout(250);
+  const after=await audible();const text=await chordStatus.textContent();
+  check(`${takeover} fades out a playing chord audition`,during.playing&&!after.playing&&(state===null||after.state===state)&&text.includes(`Audition stopped: ${why}`)&&!text.includes('Render discarded'),{during,after,text});
+  await page.keyboard.press('Escape');await page.waitForTimeout(150);
+ }
  await page.getByRole('button',{name:'Sounds',exact:true}).click();
  // Physical owner reset, real engine notes, and an output probe during rapid switches.
  await page.getByRole('button',{name:'Close',exact:true}).click();

@@ -19,7 +19,7 @@ import {
   type ExportTimes,
 } from "@/lib/synth/chord-loop";
 import { chordLoopPlan, encodeChordLoopWav, renderChordLoop } from "@/lib/synth/chord-loop-render";
-import { invalidatePhraseRenders, playPhraseRender, stopPhraseAudition } from "@/lib/synth/phrase-export";
+import { currentPhraseAudition, invalidatePhraseRenders, playPhraseRender, stopPhraseAudition } from "@/lib/synth/phrase-export";
 import { captureSession } from "@/lib/synth/session-apply";
 import { serializeSession } from "@/lib/synth/session-file";
 import { noteLooper, onPanic } from "@/lib/synth/looper-runtime";
@@ -48,7 +48,10 @@ export function ChordLoopControls() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
+  /** The render in progress; cleared when it settles, so only a pending render is ever "discarded". */
   const abortRef = useRef<AbortController | null>(null);
+  /** The chord-loop audition this component started, while it may still be playing. */
+  const auditionRef = useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => {
     if (editing !== null && !doc.chords[editing]) setEditing(null);
@@ -58,19 +61,31 @@ export function ChordLoopControls() {
   useEffect(() => {
     const discard = (why: string) => {
       const running = abortRef.current;
-      if (!running || running.signal.aborted) return;
-      running.abort(); setBusy(false); setStatus(why);
+      if (!running) return false;
+      abortRef.current = null;
+      running.abort(); setBusy(false); setStatus(`Render discarded: ${why}.`);
+      return true;
     };
-    const offPanic = onPanic(() => discard("Render discarded."));
-    // Starting the note loop or the live chord loop also discards a pending
-    // render, so a finished audition can never start over the new take.
+    // Recording or live playback takes over: a pending render is discarded,
+    // and a chord audition already playing fades out (stopPhraseAudition ramps
+    // its level to zero over 12 ms before stopping the buffer).
+    const handOff = (why: string) => {
+      if (discard(why)) return;
+      const playing = auditionRef.current;
+      auditionRef.current = null;
+      if (playing && currentPhraseAudition() === playing) {
+        stopPhraseAudition();
+        setStatus(`Audition stopped: ${why}.`);
+      }
+    };
+    const offPanic = onPanic(() => { discard("playback was stopped"); auditionRef.current = null; });
     const offLooper = noteLooper.subscribe(() => {
       const state = noteLooper.getSnapshot().state;
-      if (state === "recording") discard("Render discarded: the note loop started recording.");
-      else if (state === "playing") discard("Render discarded: the note loop started playing.");
+      if (state === "recording") handOff("the note loop started recording");
+      else if (state === "playing") handOff("the note loop started playing");
     });
     const offChords = chordLoop.subscribe(() => {
-      if (chordLoop.getSnapshot().playing) discard("Render discarded: the chord loop started playing.");
+      if (chordLoop.getSnapshot().playing) handOff("the chord loop started playing");
     });
     return () => { offPanic(); offLooper(); offChords(); };
   }, []);
@@ -88,6 +103,7 @@ export function ChordLoopControls() {
     if (noteLooper.getSnapshot().state === "recording") { setStatus("Finish recording first. Your take is untouched."); return; }
     abortRef.current?.abort();
     stopPhraseAudition();
+    auditionRef.current = null;
     chordLoop.stop();
     noteLooper.stop();
     useSynthStore.getState().stopMotion();
@@ -111,23 +127,24 @@ export function ChordLoopControls() {
         download(encodeChordLoopWav(session, request, result), name);
         setStatus(`Exported ${name} · ${result.seconds.toFixed(2)} s${result.plan.note ? ` · ${result.plan.note}` : ""}`);
       } else {
-        playPhraseRender(result);
+        auditionRef.current = playPhraseRender(result);
         setStatus(`Playing the rendered ${request.ending === "loop" ? "loop file" : "take"} (${result.seconds.toFixed(2)} s), the same samples as the WAV.`);
       }
     }).catch((error: unknown) => {
-      if (abortRef.current !== abort) return; // a newer render owns the status
+      if (abortRef.current !== abort) return; // discarded already, or a newer render owns the status
       if (abort.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         setStatus(abort.signal.aborted ? "Render discarded." : "Render discarded: the sound or the loop changed while it rendered.");
         return;
       }
       setStatus(error instanceof Error ? error.message : "The loop could not be rendered.");
     }).finally(() => {
-      if (abortRef.current === abort) setBusy(false);
+      if (abortRef.current === abort) { abortRef.current = null; setBusy(false); }
     });
   };
 
   const cancel = () => {
     abortRef.current?.abort();
+    abortRef.current = null;
     invalidatePhraseRenders();
     stopPhraseAudition();
     setBusy(false);

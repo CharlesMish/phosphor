@@ -80,6 +80,11 @@ export function setPhraseAuditionTrim(db: number) {
 }
 let updateAuditionLevel: (() => void) | null = null;
 
+/** The buffer source of the audition playing now, if any. */
+export function currentPhraseAudition(): AudioBufferSourceNode | null {
+  return audition;
+}
+
 export function stopPhraseAudition() {
   const source = audition;
   const level = auditionLevel;
@@ -97,7 +102,7 @@ export function stopPhraseAudition() {
 }
 
 /** Play the rendered buffer. This is the file, not a second performance through the live looper. */
-export function playPhraseRender(result: PhraseRender, monitorReference = useSynthStore.getState().volume) {
+export function playPhraseRender(result: PhraseRender, monitorReference = useSynthStore.getState().volume): AudioBufferSourceNode {
   stopPhraseAudition();
   if (!synth.unlock()) throw new Error("Audio is unavailable.");
   const ctx = synth.getContext();
@@ -128,4 +133,5 @@ export function playPhraseRender(result: PhraseRender, monitorReference = useSyn
     }
   };
   source.start();
+  return source;
 }
