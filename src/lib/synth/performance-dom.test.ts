@@ -75,8 +75,8 @@ it('mounted keyboard inputs share capture, boundary ownership, tempo and panic c
     await act(async () => useSynthStore.getState().undo());
     await act(async () => {
       button('Record note loop').click();
-      now = 10.25; key(win, 'keydown', 'KeyA');
-      now = 10.5; key(win, 'keyup', 'KeyA');
+      now = 10.25; key(win, 'keydown', 'KeyZ');
+      now = 10.5; key(win, 'keyup', 'KeyZ');
       now = 10.75; pointer(button('E4'), 'pointerdown', 1);
       now = 11; pointer(button('E4'), 'pointerup', 1);
     });
@@ -107,7 +107,7 @@ it('mounted keyboard inputs share capture, boundary ownership, tempo and panic c
     // A brand-new QWERTY press exactly at the boundary must retain its key-up owner.
     await act(async () => {
       useSynthStore.getState().setMotionBpm(120); now = 20; button('Record note loop').click();
-      now = 22; key(win, 'keydown', 'KeyA'); key(win, 'keyup', 'KeyA');
+      now = 22; key(win, 'keydown', 'KeyZ'); key(win, 'keyup', 'KeyZ');
     });
     assert.equal(live.size, 0); assert.equal(noteLooper.getEvents().length, 0);
     // Likewise for pointer input; a held pointer is cleared at automatic transition.
@@ -125,7 +125,7 @@ it('mounted keyboard inputs share capture, boundary ownership, tempo and panic c
 
     for (const panic of ['Escape', 'blur', 'visibility']) {
       await act(async () => {
-        now += 10; button('Record note loop').click(); key(win, 'keydown', 'KeyA');
+        now += 10; button('Record note loop').click(); key(win, 'keydown', 'KeyZ');
         if (panic === 'Escape') key(win.document.querySelector('[aria-label="Shared BPM"]')!, 'keydown', 'Escape');
         else if (panic === 'blur') win.dispatchEvent(new win.Event('blur'));
         else {

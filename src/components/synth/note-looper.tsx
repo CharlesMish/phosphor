@@ -4,6 +4,7 @@ import { noteLooper } from '@/lib/synth/looper-runtime';
 import { LOOP_BARS, type LoopBars } from '@/lib/synth/note-looper';
 import { MOTION_BPM_MIN, MOTION_BPM_MAX } from '@/lib/synth/motion';
 import { useSynthStore } from '@/lib/synth/store';
+import { PhraseRenderControls } from './phrase-render-controls';
 
 export function NoteLooperControls() {
   const state = useSyncExternalStore(noteLooper.subscribe, noteLooper.getSnapshot);
@@ -32,10 +33,22 @@ export function NoteLooperControls() {
         onClick={() => running ? noteLooper.stop() : noteLooper.play()}>{running ? 'Stop' : 'Play'}</Button>
       <Button variant="subtle" disabled={!running && !state.hasTake}
         aria-label="Clear note loop" onClick={() => noteLooper.clear()}>Clear</Button>
+      <div role="group" aria-label="Transpose note loop take" className="flex items-center gap-1 font-mono text-xs text-faint"
+        title="Moves every recorded note, keeping the rhythm">
+        Transpose
+        <Button variant="subtle" size="icon" className="size-8" aria-label="Lower the take one semitone"
+          disabled={!noteLooper.canShift(-1)} onClick={() => noteLooper.shiftTake(-1)}>−</Button>
+        <output className="min-w-7 text-center tabular-nums text-fg" aria-label="Take shift in semitones">{state.shift > 0 ? '+' : ''}{state.shift}</output>
+        <Button variant="subtle" size="icon" className="size-8" aria-label="Raise the take one semitone"
+          disabled={!noteLooper.canShift(1)} onClick={() => noteLooper.shiftTake(1)}>+</Button>
+        <Button variant="ghost" aria-label="Shift the take back to where it was recorded" disabled={!state.shift || !noteLooper.canShift(-state.shift)}
+          onClick={() => noteLooper.shiftTake(-state.shift)}>Reset</Button>
+      </div>
       <span className="font-mono text-xs text-muted" role="status">
         {state.state === 'empty' ? '4/4 · Ready' : state.state === 'recording' ? 'Recording' : state.state === 'playing' ? 'Looping' : 'Stopped'}
       </span>
       <progress className="h-1 w-20 accent-active" aria-label="Note loop progress" max={1} value={state.progress} />
+      <PhraseRenderControls hasTake={state.hasTake && state.state !== 'recording'} />
     </div>
   );
 }

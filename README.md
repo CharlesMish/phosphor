@@ -12,7 +12,8 @@ Phosphor is a browser instrument built around directly manipulating DSP structur
 - **DRIVE** — draw the transfer function applied after the low-pass filter.
 - **CHORUS** — draw the stereo delay-time cycle between DRIVE and SPACE.
 - **SPACE** — draw the normalized macro contour of a 1–3 second impulse response; deterministic microstructure underneath it becomes the actual convolution IR.
-- **Figurestead treatments** — change the rendering of the instrument without changing its sound or state.
+- **Ultraviolet Laboratory** — Figurestead's reference dark theme, the instrument's one look.
+- **Two-row keys and a chord loop** — play two octaves from the laptop keyboard, capture chords, re-voice and transpose them, and export seamless loop WAVs.
 
 ## Run locally
 
@@ -57,9 +58,13 @@ The Vite base path is `/phosphor/`, matching the repository Pages URL.
 
 Treat `main` as the playable baseline. New musical or rendering experiments should happen on branches and merge back only after review.
 
-### Treatment validation note
+### Treatment
 
-Registration Ink inherits its palette from Figurestead. A user-reported bug in the upstream validation harness leaves the full Figurestead claims for this treatment pending revalidation. Its presence here is a visual option, not a certification of those claims. Keep this note in the developer documentation and revisit it when corrected upstream evidence is available; the cleanup pass does not redesign the palette.
+Ultraviolet Laboratory, Figurestead's reference dark theme, is the only
+treatment and the default. The Phosphor, Registration Ink and Deep Observatory
+treatments were removed; the treatment layer stays so Figurestead's reference
+light theme (Lavender Fog Notebook) can be added later, at which point the
+selector reappears.
 
 ### Panel cleanup baseline
 
@@ -72,15 +77,64 @@ The effects summary opens editors without toggling effects. Drive shows Identity
 for the identity curve, otherwise its applied amount (including the Safe cap).
 Chorus and Space show mix or Bypass at zero. Keyboard keys are native buttons:
 hold Enter or Space on a focused key to play it; focus/window loss releases it.
-The existing QWERTY mappings and audio engine remain in place.
+
+## Computer keys
+
+Two layouts, matched by physical key so AZERTY and QWERTZ keyboards get the
+same shapes, chosen with **Two rows / One row** beside the octave buttons and
+remembered in this browser:
+
+- **Two rows** (default, as in Quire and Lost Registers): `Z X C V B N M` play
+  the lower octave with sharps on `S D G H J` (`, L . ; /` carry on upward);
+  `Q W E R T Y U I O P` play the octave above with sharps on
+  `2 3 5 6 7 9 0`. Gmaj7 over a G bass is `B M W 5`. The on-screen keyboard
+  spans C3–E5 at octave 0 and prints each computer key.
+- **One row**: Phosphor's original `A W S E D F T G Y H U J K O L P ; '`.
+
+In both, `−` and `=` (or numpad − and +) change octave, **Enter** adds the
+held or last-played chord to the chord loop, and Esc stops sound.
+
+## Chord loop
+
+Modelled on Quire's backing loop and Lost Registers' progression:
+
+- **Capture.** Play a chord and press Enter or **Add chord**. The chord you are
+  holding is used; if you have let go, the fullest chord of your last gesture
+  is used, so you don't have to hold keys while clicking. Up to 32 chords of up
+  to 8 notes. With the loop transposed, chords are stored so they sound as
+  played.
+- **Lengths.** Each chord lasts 1 beat to 8 bars (`New chords` sets the default;
+  **Apply to all** resets every chord). ◂ moves a chord earlier, × removes it.
+- **Voicing.** Select a chord to move single notes by octave or semitone,
+  remove a note, take the held notes, audition for a second, then Apply. This
+  is how a laptop-keyboard chord becomes the voicing you'd play on a piano.
+- **Transpose.** ±12 semitones for the whole loop without touching the stored
+  voicings; names update.
+- **Play** loops the chords live through the current sound. Edits made while it
+  plays apply from the next time through. The chord loop and the note loop
+  share the scheduled-note transport, so starting one stops the other.
+- **Export.** *Loop* renders whole passes that open with the previous pass's
+  tails and end where they begin, for dropping into a multitrack (it starts
+  rendering inside the previous pass, queues the next downbeat at the end, and
+  fades the first 40 ms in from the true continuation). *Take* starts from
+  silence and keeps the final tail. Once, 2×, 4× or 8× through, rounded up to
+  whole Motion cycles for a loop (as in Quire), capped at 5 minutes. Files are
+  48 kHz float stereo named like the other instruments' exports, e.g.
+  `phosphor-loop-Fsmaj7_Fm7_GonB-123bpm-x2.wav`.
+
+Limits: chorus LFOs and Motion's 30 Hz sampling keep their own clocks, so a
+loop with Chorus or Motion matches a continuous render less exactly at the seam
+(the fade keeps the join smooth). One-shot Motion restarts at the top of a loop
+file. Chords are stored in this browser (`phosphor.chordLoop.v1`), not in
+session files.
 
 ## Control Cabinet
 
 Control Cabinet is the instrument's sole layout: main graph on the left, control
 rack on the right, square divisions, and a full-width keyboard. The layout-study
-selector, alternate layouts, and layout context have been removed. The four
-Figurestead treatments remain independent visual choices. Compact screens retain
-natural scrolling. The Registration Ink validation caveat above still applies.
+selector, alternate layouts, and layout context have been removed. Ultraviolet
+Laboratory is the one Figurestead treatment (see Treatment above). Compact
+screens retain natural scrolling.
 
 Motion includes four editable starting shapes: Sweep, Log, Exponential, and
 3:3:2. Log rises quickly and eases toward 100%; Exponential starts gently and
@@ -169,7 +223,10 @@ for the original validation scopes and unverified observations.
 
 The keyboard's **Note loop** strip records one unquantized performance from the
 onscreen piano (including focused-key Enter/Space) and QWERTY keys. Choose **1, 2,
-4, or 8 bars**, then Record. The meter is fixed **4/4**. Recording starts immediately,
+4, 8 or 16 bars**, then Record. **Transpose −/+** moves every note of a
+completed take by a semitone (up to two octaves either way), keeping its rhythm;
+saves and renders use the moved notes, and Reset returns it to where it was
+recorded or loaded. The meter is fixed **4/4**. Recording starts immediately,
 keeps leading silence, and automatically repeats at the fixed window's end. Held
 notes receive a note-off at that boundary; release tails may ring naturally. Keys
 held through the boundary must be released and pressed again to play live.
@@ -191,18 +248,46 @@ missed attacks rather than replaying them in a burst.
 
 Record replaces the previous take. Stop during recording discards that partial
 take; Stop during playback keeps it. Clear removes it, and changing bar length
-clears it before the next take. There is no reload persistence, overdub, punch-in,
-count-in, metronome, swing, quantization, audio recording/export, or parameter
-recording (including drawing, Motion, Morph, effects, cutoff, envelope, and volume).
+clears it before the next take. There is no overdub, punch-in, count-in,
+metronome, swing, or quantization. Ordinary Play does not record audio, Motion,
+or control moves; it repeats the saved notes through the current synth.
 Scheduled envelopes use settings at scheduling time; sound/effect edits continue
 through the shared engine. Polyphony retains the 12-held-voice limit.
+
+## Session save and restore
+
+The **Session** menu saves the current instrument and the completed note loop
+as a `phosphor-session` version 1 JSON file, and can open one back. This
+browser also writes that same document locally, about 0.4 s after edits settle
+and when the page hides, then restores it before the first paint. Restore
+stops Motion and the note loop and does not start playback.
+
+A session stores the cycle, A/B and the morph, drawn Drive, Chorus, and Space
+shapes, envelope, filter, volume, octave, and Motion's path, mode, tempo,
+length, destinations, and ranges, plus the note-loop bar length and completed
+note events. It does not store undo history, playheads, held keys, the visual
+treatment, or a recording that is still in progress. A file that is malformed
+or an unsupported version is refused, and the session you were in stays as it
+was. Details and the tail and sampling rules for export are in
+[session and render notes](docs/session-and-render.md).
+
+## Render from start
+
+**Audition from start** and **Export WAV** render the saved notes and Motion
+from beat 1 through the production synth, then keep one phrase plus the release
+and Space tail. Leading rests stay. There is no count-in. The WAV is 32-bit
+float stereo at 48 kHz, and audition plays that same buffer. Ordinary Play is
+not synced to this clock, and the file is not a recording of live playback.
+Motion is sampled at 30 Hz and then smoothed by the existing gain and curve
+updates; that is not sample-accurate automation. Cancel, an edit, or a newer
+render discards an unfinished buffer.
 
 ## Contributing and studies
 
 Keep each change focused on a branch from `main`; describe the musical or visual
 change and run the checks above before opening a pull request. Report listening
 and browser observations separately from automated results, including what was
-not tested. Preserve the Registration Ink caveat and the timing limits above.
+not tested. Preserve the timing limits above.
 
 - [Development history](docs/DEVELOPMENT_HISTORY.md) indexes the original session reports.
 - [String Lab](docs/string-lab.md) and [One String study](docs/one-string-study.md)
@@ -221,3 +306,17 @@ grant: [IBM Plex Mono license](https://github.com/google/fonts/blob/main/ofl/ibm
 and [Space Grotesk license](https://github.com/google/fonts/blob/main/ofl/spacegrotesk/OFL.txt).
 If you redistribute a standalone export with embedded fonts or dependencies,
 include their applicable licenses and notices.
+
+
+## Preset collection review branch
+
+The Sounds shelf ships nine built-in sounds: the favourites from Charlie's
+blind listening round and the follow-up — Drawbar Organ, Astra's Open reed
+line, Reed Lead, Chip Pulse, String Machine, Mallet Echo, Glass Arp, Vowel Steps
+and Speak Toy (`src/presets/factory.ts`). Claude's copies use their own
+`favorites:` IDs, so every contributor pack still imports beside them; Open reed
+line keeps its `foundation:lead-01` ID. Stars on the retired starter sounds are
+dropped on load. `starter.pack.json` stays as the reviewed foundation bank for
+tests and the contributor kit.
+
+The shelf also has role/character search, favorites and protected copies. Loading preserves your take, tempo and monitor; demos and Motion start explicitly. See [the five-minute audition](docs/preset-foundation/AUDITION.md), [foundation decision and checks](docs/preset-foundation/REVIEW.md), and [neutral contributor kit](contributor-kit/README.md). This branch has not been merged or deployed.

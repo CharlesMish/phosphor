@@ -1224,14 +1224,25 @@ describe("combined live audio graph", () => {
       assert.equal(spaceDry.gain.targetCalls[0]?.prior, Math.cos(initialSpaceAngle));
       assert.equal(spaceWetIn.gain.targetCalls[0]?.prior, Math.sin(initialSpaceAngle));
 
-      const master = spaceSum.connections[0];
+      const soundTrim = spaceSum.connections[0];
+      assert.ok(soundTrim instanceof TestGainNode);
+      assert.equal(soundTrim.gain.value, 1);
+      const master = soundTrim.connections[0];
       assert.ok(master instanceof TestGainNode);
       const preSafety = master.connections[0];
       assert.ok(preSafety instanceof TestAnalyserNode);
       assert.equal(preSafety.connections[0], safety);
       const outputAnalyser = safety.connections[0];
       assert.ok(outputAnalyser instanceof TestAnalyserNode);
-      assert.equal(outputAnalyser.connections[0], context.destination);
+      const switchGain = outputAnalyser.connections[0];
+      assert.ok(switchGain instanceof TestGainNode);
+      const auditionGain = switchGain.connections[0];
+      assert.ok(auditionGain instanceof TestGainNode);
+      assert.equal(auditionGain.connections[0], context.destination);
+      engine.setParams({ trimDb: -6 });
+      assert.ok(Math.abs(soundTrim.gain.value - 10 ** (-6 / 20)) < 1e-9);
+      engine.setAuditionTrim(-12);
+      assert.ok(Math.abs(auditionGain.gain.value - 10 ** (-12 / 20)) < 1e-9);
       assert.equal(context.analysers.length, 3);
 
       driveInputAnalyser.setSamples([-0.42, 0.61, -0.18, 0.2]);

@@ -175,3 +175,23 @@ it('changing tempo with an idle looper leaves live playing alone', () => {
   const h = harness(); h.input.noteOn('qwerty:KeyA', 60); h.loop.setBpm(80);
   assert.ok(h.live.has(60)); h.input.noteOff('qwerty:KeyA'); assert.equal(h.live.size, 0);
 });
+it('a partial recording is not a completed take, and loading leaves the transport stopped', () => {
+  const h = harness();
+  h.loop.record();
+  h.clock(10.2); h.input.noteOn('qwerty:KeyA', 60);
+  assert.equal(h.loop.getSnapshot().state, 'recording');
+  assert.equal(h.loop.getEvents().length, 1);
+  assert.deepEqual(h.loop.completedTake().events, []);
+  h.advance(12);
+  assert.equal(h.loop.completedTake().events.length, 2);
+  const calls = h.calls.length;
+  h.loop.loadTake(4, [
+    { id: 3, type: 'on', midi: 67, beat: 1 },
+    { id: 3, type: 'off', midi: 67, beat: 2 },
+  ]);
+  assert.equal(h.loop.getSnapshot().state, 'stopped');
+  assert.equal(h.loop.getSnapshot().bars, 4);
+  assert.equal(h.calls.length, calls);
+  assert.equal(h.live.size, 0);
+  assert.deepEqual(h.loop.completedTake().events, h.loop.getEvents());
+});

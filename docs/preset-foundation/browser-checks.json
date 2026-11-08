@@ -1,0 +1,104 @@
+{
+  "checks": [
+    {
+      "name": "existing phrase render browser suite",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "preset render browser suite",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "four starter sounds",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "character search",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "UI load preserves workspace and leaves playback stopped",
+      "ok": true,
+      "detail": {
+        "tempo": 91,
+        "volume": 0.4,
+        "octave": -1,
+        "domain": "drive",
+        "notes": 2,
+        "bars": 2,
+        "motion": false,
+        "transport": "stopped"
+      }
+    },
+    {
+      "name": "favorites filter",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "blind UI hides creator and evocative names",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "rename copy visible",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "duplicate receives a new record",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "invalid file unchanged",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "UI demo preserves recorded events",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "reload retains library and favorite",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "reload restores patch trim and take stopped",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "switching resets input ownership and remains bounded",
+      "ok": true,
+      "detail": {
+        "peak": 0.023059725761413574,
+        "maxStep": 0.012926995754241943,
+        "audible": 0.006134331226348877,
+        "count": 68608
+      }
+    },
+    {
+      "name": "390px shelf stays in viewport",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "production bundle loads and auditions the bass",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "no browser exceptions",
+      "ok": true,
+      "detail": []
+    }
+  ],
+  "errors": []
+}

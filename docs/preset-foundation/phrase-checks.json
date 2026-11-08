@@ -1,0 +1,247 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "loop with Motion reloads",
+      "ok": true,
+      "detail": {
+        "state": "stopped",
+        "playing": false
+      }
+    },
+    {
+      "name": "reload is stopped",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "clean session restores the loop",
+      "ok": true,
+      "detail": {
+        "report": "restored"
+      }
+    },
+    {
+      "name": "rejected file leaves the session",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "static duration",
+      "ok": true,
+      "detail": {
+        "frames": 108192,
+        "body": 2,
+        "tail": 0.254
+      }
+    },
+    {
+      "name": "static wav matches audition",
+      "ok": true,
+      "detail": {
+        "decoded": 108192
+      }
+    },
+    {
+      "name": "static finite",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "static peak",
+      "ok": true,
+      "detail": {
+        "peak": 0.11431312561035156
+      }
+    },
+    {
+      "name": "static repeat matches",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "static channels match in phase",
+      "ok": true,
+      "detail": {
+        "stereoGap": 0
+      }
+    },
+    {
+      "name": "static onset is at the first beat",
+      "ok": true,
+      "detail": {
+        "onset": 196
+      }
+    },
+    {
+      "name": "static tail decays",
+      "ok": true,
+      "detail": {
+        "releaseRms": 0.03748024820852466,
+        "endRms": 0
+      }
+    },
+    {
+      "name": "morph duration",
+      "ok": true,
+      "detail": {
+        "frames": 108192,
+        "body": 2,
+        "tail": 0.254
+      }
+    },
+    {
+      "name": "morph wav matches audition",
+      "ok": true,
+      "detail": {
+        "decoded": 108192
+      }
+    },
+    {
+      "name": "morph finite",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "morph peak",
+      "ok": true,
+      "detail": {
+        "peak": 0.11452984809875488
+      }
+    },
+    {
+      "name": "changing morph differs from the held cycle",
+      "ok": true,
+      "detail": {
+        "morphDiff": 0.07225817441940308
+      }
+    },
+    {
+      "name": "reversed chorus duration",
+      "ok": true,
+      "detail": {
+        "frames": 108192,
+        "body": 2,
+        "tail": 0.254
+      }
+    },
+    {
+      "name": "reversed chorus wav matches audition",
+      "ok": true,
+      "detail": {
+        "decoded": 108192
+      }
+    },
+    {
+      "name": "reversed chorus finite",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "reversed chorus peak",
+      "ok": true,
+      "detail": {
+        "peak": 0.20035302639007568
+      }
+    },
+    {
+      "name": "reversed chorus Motion differs from forward",
+      "ok": true,
+      "detail": {
+        "reverseDiff": 0.22682124376296997
+      }
+    },
+    {
+      "name": "chorus Motion is stereo",
+      "ok": true,
+      "detail": {
+        "reverseStereo": 0.24238890409469604
+      }
+    },
+    {
+      "name": "effects-only duration",
+      "ok": true,
+      "detail": {
+        "frames": 156192,
+        "body": 2,
+        "tail": 1.254
+      }
+    },
+    {
+      "name": "effects-only wav matches audition",
+      "ok": true,
+      "detail": {
+        "decoded": 156192
+      }
+    },
+    {
+      "name": "effects-only finite",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "effects-only peak",
+      "ok": true,
+      "detail": {
+        "peak": 0.20388638973236084
+      }
+    },
+    {
+      "name": "effects-only Motion differs from the saved amounts",
+      "ok": true,
+      "detail": {
+        "effectsDiff": 0.1096528172492981
+      }
+    },
+    {
+      "name": "leading rest duration",
+      "ok": true,
+      "detail": {
+        "frames": 108192,
+        "body": 2,
+        "tail": 0.254
+      }
+    },
+    {
+      "name": "leading rest wav matches audition",
+      "ok": true,
+      "detail": {
+        "decoded": 108192
+      }
+    },
+    {
+      "name": "leading rest finite",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "leading rest peak",
+      "ok": true,
+      "detail": {
+        "peak": 0.11417067050933838
+      }
+    },
+    {
+      "name": "leading rest stays silent",
+      "ok": true,
+      "detail": {
+        "earlyPeak": 0
+      }
+    },
+    {
+      "name": "leading rest onset is on beat 2",
+      "ok": true,
+      "detail": {
+        "onset": 0.5040625
+      }
+    },
+    {
+      "name": "boundary-held note rings into the tail and then decays",
+      "ok": true,
+      "detail": {
+        "ring": 0.03520670585813033,
+        "tailEnd": 0.000017285670054433814
+      }
+    }
+  ]
+}

@@ -1,0 +1,354 @@
+{
+  "checks": [
+    {
+      "name": "bass: finite, audible, headroom, leading rest and tail",
+      "ok": true,
+      "detail": {
+        "peak": 0.07622045278549194,
+        "rms": 0.036203534408904385,
+        "monoRatio": 1,
+        "lrCorrelation": 1,
+        "maxStep": 0.001452803611755371,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 239232,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "bass: mono retains body",
+      "ok": true,
+      "detail": {
+        "peak": 0.07622045278549194,
+        "rms": 0.036203534408904385,
+        "monoRatio": 1,
+        "lrCorrelation": 1,
+        "maxStep": 0.001452803611755371,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 239232,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "bass: WAV PCM exact",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "bass: 12-voice headroom",
+      "ok": true,
+      "detail": {
+        "peak": 0.2871112823486328,
+        "rms": 0.06497135143467397,
+        "monoRatio": 1,
+        "lrCorrelation": 1,
+        "maxStep": 0.002403557300567627,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 239232,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "keys: finite, audible, headroom, leading rest and tail",
+      "ok": true,
+      "detail": {
+        "peak": 0.12909364700317383,
+        "rms": 0.0321735195946212,
+        "monoRatio": 0.9950826797690971,
+        "lrCorrelation": 0.9805412553133582,
+        "maxStep": 0.007797539234161377,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 296352,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "keys: mono retains body",
+      "ok": true,
+      "detail": {
+        "peak": 0.12909364700317383,
+        "rms": 0.0321735195946212,
+        "monoRatio": 0.9950826797690971,
+        "lrCorrelation": 0.9805412553133582,
+        "maxStep": 0.007797539234161377,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 296352,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "keys: WAV PCM exact",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "keys: 12-voice headroom",
+      "ok": true,
+      "detail": {
+        "peak": 0.3278768062591553,
+        "rms": 0.05678985116779957,
+        "monoRatio": 0.9950278904803168,
+        "lrCorrelation": 0.9805119137124152,
+        "maxStep": 0.011841177940368652,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 296352,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "lead: finite, audible, headroom, leading rest and tail",
+      "ok": true,
+      "detail": {
+        "peak": 0.06020611524581909,
+        "rms": 0.02948275608425224,
+        "monoRatio": 1,
+        "lrCorrelation": 1,
+        "maxStep": 0.014886975288391113,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 241632,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "lead: mono retains body",
+      "ok": true,
+      "detail": {
+        "peak": 0.06020611524581909,
+        "rms": 0.02948275608425224,
+        "monoRatio": 1,
+        "lrCorrelation": 1,
+        "maxStep": 0.014886975288391113,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 241632,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "lead: WAV PCM exact",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "lead: 12-voice headroom",
+      "ok": true,
+      "detail": {
+        "peak": 0.30071473121643066,
+        "rms": 0.05234611353143061,
+        "monoRatio": 1,
+        "lrCorrelation": 1,
+        "maxStep": 0.03071284294128418,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 241632,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "pad: finite, audible, headroom, leading rest and tail",
+      "ok": true,
+      "detail": {
+        "peak": 0.12506401538848877,
+        "rms": 0.029719168213304115,
+        "monoRatio": 0.9618346042630944,
+        "lrCorrelation": 0.8503710982693203,
+        "maxStep": 0.006475687026977539,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 372192,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "pad: mono retains body",
+      "ok": true,
+      "detail": {
+        "peak": 0.12506401538848877,
+        "rms": 0.029719168213304115,
+        "monoRatio": 0.9618346042630944,
+        "lrCorrelation": 0.8503710982693203,
+        "maxStep": 0.006475687026977539,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 372192,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "pad: WAV PCM exact",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "pad: 12-voice headroom",
+      "ok": true,
+      "detail": {
+        "peak": 0.30385076999664307,
+        "rms": 0.042448578984496624,
+        "monoRatio": 0.957515443844475,
+        "lrCorrelation": 0.8342279554891144,
+        "maxStep": 0.009403109550476074,
+        "leadingPeak": 0,
+        "final40msPeak": 0,
+        "frames": 372192,
+        "sampleRate": 48000
+      }
+    },
+    {
+      "name": "restored morph/Space/Motion render is sample-identical",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "explicit Motion produces a different performance",
+      "ok": true,
+      "detail": {}
+    },
+    {
+      "name": "authored -6 dB trim is used by the production render",
+      "ok": true,
+      "detail": {
+        "ratio": 0.5011874719945072
+      }
+    },
+    {
+      "name": "in-flight cancellation resolves without stale audio",
+      "ok": true,
+      "detail": {}
+    }
+  ],
+  "measures": [
+    {
+      "id": "P-5E2EE157",
+      "role": "bass",
+      "mode": "static",
+      "peak": 0.07622045278549194,
+      "rms": 0.036203534408904385,
+      "monoRatio": 1,
+      "lrCorrelation": 1,
+      "maxStep": 0.001452803611755371,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 239232,
+      "sampleRate": 48000
+    },
+    {
+      "id": "P-5E2EE157",
+      "role": "bass",
+      "mode": "12-voice-monitor-1",
+      "peak": 0.2871112823486328,
+      "rms": 0.06497135143467397,
+      "monoRatio": 1,
+      "lrCorrelation": 1,
+      "maxStep": 0.002403557300567627,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 239232,
+      "sampleRate": 48000
+    },
+    {
+      "id": "P-4AAA3666",
+      "role": "keys",
+      "mode": "static",
+      "peak": 0.12909364700317383,
+      "rms": 0.0321735195946212,
+      "monoRatio": 0.9950826797690971,
+      "lrCorrelation": 0.9805412553133582,
+      "maxStep": 0.007797539234161377,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 296352,
+      "sampleRate": 48000
+    },
+    {
+      "id": "P-4AAA3666",
+      "role": "keys",
+      "mode": "12-voice-monitor-1",
+      "peak": 0.3278768062591553,
+      "rms": 0.05678985116779957,
+      "monoRatio": 0.9950278904803168,
+      "lrCorrelation": 0.9805119137124152,
+      "maxStep": 0.011841177940368652,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 296352,
+      "sampleRate": 48000
+    },
+    {
+      "id": "P-DA79DC34",
+      "role": "lead",
+      "mode": "static",
+      "peak": 0.06020611524581909,
+      "rms": 0.02948275608425224,
+      "monoRatio": 1,
+      "lrCorrelation": 1,
+      "maxStep": 0.014886975288391113,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 241632,
+      "sampleRate": 48000
+    },
+    {
+      "id": "P-DA79DC34",
+      "role": "lead",
+      "mode": "12-voice-monitor-1",
+      "peak": 0.30071473121643066,
+      "rms": 0.05234611353143061,
+      "monoRatio": 1,
+      "lrCorrelation": 1,
+      "maxStep": 0.03071284294128418,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 241632,
+      "sampleRate": 48000
+    },
+    {
+      "id": "P-E4E5AB95",
+      "role": "pad",
+      "mode": "static",
+      "peak": 0.12506401538848877,
+      "rms": 0.029719168213304115,
+      "monoRatio": 0.9618346042630944,
+      "lrCorrelation": 0.8503710982693203,
+      "maxStep": 0.006475687026977539,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 372192,
+      "sampleRate": 48000
+    },
+    {
+      "id": "P-E4E5AB95",
+      "role": "pad",
+      "mode": "12-voice-monitor-1",
+      "peak": 0.30385076999664307,
+      "rms": 0.042448578984496624,
+      "monoRatio": 0.957515443844475,
+      "lrCorrelation": 0.8342279554891144,
+      "maxStep": 0.009403109550476074,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 372192,
+      "sampleRate": 48000
+    },
+    {
+      "id": "P-E4E5AB95",
+      "role": "pad",
+      "mode": "motion",
+      "peak": 0.11968398094177246,
+      "rms": 0.027630919524587048,
+      "monoRatio": 0.9623779782017158,
+      "lrCorrelation": 0.8524956294468465,
+      "maxStep": 0.008003532886505127,
+      "leadingPeak": 0,
+      "final40msPeak": 0,
+      "frames": 372192,
+      "sampleRate": 48000
+    }
+  ]
+}
