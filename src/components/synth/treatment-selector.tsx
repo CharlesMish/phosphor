@@ -7,6 +7,8 @@ import {
 
 export function TreatmentSelector() {
   const { treatment, setTreatment } = useTreatment();
+  // A single treatment needs no menu.
+  if (TREATMENT_OPTIONS.length < 2) return null;
 
   return (
     <label

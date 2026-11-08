@@ -1,7 +1,9 @@
 import { beatDurationSeconds, clampMotionBpm } from './motion';
 import type { PerformanceEvent, PerformanceInput } from './performance';
 
-export const LOOP_BARS = [1, 2, 4, 8] as const;
+export const LOOP_BARS = [1, 2, 4, 8, 16] as const;
+/** How far Shift take moves a recorded take, in semitones, from where it was recorded or loaded. */
+export const TAKE_SHIFT_LIMIT = 24;
 export type LoopBars = typeof LOOP_BARS[number];
 export const LOOP_LOOKAHEAD = 0.1;
 export const LOOP_TICK_MS = 25;
@@ -12,6 +14,8 @@ export type NoteEvent = { id: number; type: 'on' | 'off'; midi: number; beat: nu
 export type LoopSnapshot = {
   state: 'empty' | 'recording' | 'playing' | 'stopped';
   bars: LoopBars; progress: number; eventCount: number; hasTake: boolean;
+  /** Semitones the take has been shifted since it was recorded or loaded. */
+  shift: number;
 };
 export type LoopPort = {
   unlock(): boolean;
@@ -38,7 +42,7 @@ export class NoteLooper {
   private scheduled = new Map<string, number>();
   private listeners = new Set<() => void>();
   private unsubscribe: () => void;
-  private snapshot: LoopSnapshot = { state: 'empty', bars: 1, progress: 0, eventCount: 0, hasTake: false };
+  private snapshot: LoopSnapshot = { state: 'empty', bars: 1, progress: 0, eventCount: 0, hasTake: false, shift: 0 };
   private port: LoopPort;
   private input: PerformanceInput;
   constructor(port: LoopPort, input: PerformanceInput, bpm: number) {
@@ -86,10 +90,13 @@ export class NoteLooper {
     this.startTimer();
   }
   stop() {
+    // Only a running take owns scheduled notes; an idle Stop/Clear/length change
+    // must not cancel another transport (the chord loop) that is playing.
+    const owned = this.snapshot.state === 'recording' || this.snapshot.state === 'playing';
     this.run++;
     if (this.timer !== null) this.port.clearInterval(this.timer);
     this.timer = null;
-    this.port.cancel();
+    if (owned) this.port.cancel();
     this.input.reset();
     this.active.clear();
     this.scheduled.clear();
@@ -100,7 +107,24 @@ export class NoteLooper {
     this.stop();
     this.events = [];
     this.nextId = 0;
-    this.update({ state: 'empty', hasTake: false, eventCount: 0 });
+    this.update({ state: 'empty', hasTake: false, eventCount: 0, shift: 0 });
+  }
+  /** Whether every note of the take stays in MIDI range after moving it by `semitones`. */
+  canShift(semitones: number) {
+    const next = this.snapshot.shift + semitones;
+    return this.snapshot.state !== 'recording' && this.snapshot.hasTake && Number.isInteger(semitones) &&
+      Math.abs(next) <= TAKE_SHIFT_LIMIT &&
+      this.events.every(e => e.midi + semitones >= 0 && e.midi + semitones <= 127);
+  }
+  /**
+   * Transpose the recorded take in place, keeping its rhythm. Playback picks
+   * the new pitches up from the next notes it queues; saves and renders use them.
+   */
+  shiftTake(semitones: number) {
+    if (!semitones || !this.canShift(semitones)) return false;
+    this.events = this.events.map(e => ({ ...e, midi: e.midi + semitones }));
+    this.update({ shift: this.snapshot.shift + semitones, eventCount: this.events.length });
+    return true;
   }
   /**
    * The take that can be saved. An in-progress recording is omitted: Record has
@@ -126,6 +150,7 @@ export class NoteLooper {
       hasTake,
       progress: 0,
       eventCount: this.events.length,
+      shift: 0,
     });
   }
   dispose() { this.stop(); this.unsubscribe(); }

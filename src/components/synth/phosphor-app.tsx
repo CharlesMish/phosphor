@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { synth } from "@/lib/synth/engine";
 import { useSynthStore } from "@/lib/synth/store";
-import { midiFromCode } from "@/lib/synth/keyboard-map";
+import { midiFromCode, octaveStep } from "@/lib/synth/keyboard-map";
+import { getKeyLayout } from "@/lib/synth/key-layout-pref";
+import { chordLoop } from "@/lib/synth/chord-loop-runtime";
 import { useTreatment } from "@/lib/presentation/treatment";
 import { isEditableTarget } from "@/lib/utils";
 import { WaveformEditor } from "./waveform-editor";
@@ -9,6 +11,7 @@ import { MotionEditor } from "./motion-editor";
 import { MotionPlaybackController } from "./motion-playback";
 import { Oscilloscope } from "./oscilloscope";
 import { NoteLooperControls } from "./note-looper";
+import { ChordLoopControls } from "./chord-loop";
 import { connectLooperTempo, panicPerformance, performanceInput } from "@/lib/synth/looper-runtime";
 import { stopPhraseAudition, invalidatePhraseRenders } from "@/lib/synth/phrase-export";
 import { startSessionAutosave } from "@/lib/synth/session-apply";
@@ -77,6 +80,15 @@ export function PhosphorApp() {
   useEffect(() => {
     const held = new Map<string, number>();
     const unreset = performanceInput.onReset(() => held.clear());
+    // Browsers focus a button when it is clicked. Such a button must not keep
+    // Enter (it would press Play/Remove again); one reached by Tab does.
+    let pointerFocused: Element | null = null;
+    const onPointerDown = (e: PointerEvent) => {
+      pointerFocused = e.target instanceof Element ? e.target.closest("button, a, select, summary") : null;
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (e.target !== pointerFocused) pointerFocused = null;
+    };
     const untempo = connectLooperTempo();
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -102,7 +114,23 @@ export function PhosphorApp() {
       }
 
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const midi = midiFromCode(e.code, useSynthStore.getState().octave);
+      const step = octaveStep(e.code);
+      if (step !== 0) {
+        e.preventDefault();
+        const store = useSynthStore.getState();
+        store.setOctave(store.octave + step);
+        return;
+      }
+      // Enter adds the held (or last played) chord to the chord loop. A focused
+      // button keeps Enter for itself.
+      if (e.code === "Enter" || e.code === "NumpadEnter") {
+        const control = e.target instanceof Element ? e.target.closest("button, a, select, summary") : null;
+        if (control && control !== pointerFocused) return;
+        e.preventDefault();
+        chordLoop.addCapturedChord();
+        return;
+      }
+      const midi = midiFromCode(e.code, useSynthStore.getState().octave, getKeyLayout());
       if (midi === null) return;
       e.preventDefault();
       if (held.has(e.code)) return;
@@ -128,6 +156,8 @@ export function PhosphorApp() {
       else if (synth.ready) synth.unlock();
     };
 
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("focusin", onFocusIn);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", panic);
@@ -135,6 +165,8 @@ export function PhosphorApp() {
     const stopAutosave = startSessionAutosave();
 
     return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("focusin", onFocusIn);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", panic);
@@ -187,6 +219,7 @@ export function PhosphorApp() {
         <section className="phosphor-keyboard shrink-0 rounded-xl bg-surface p-2 shadow-border pb-[max(0.5rem,env(safe-area-inset-bottom))]" aria-label="Keyboard">
           <KeyboardControls />
           <NoteLooperControls />
+          <ChordLoopControls />
           <Piano />
         </section>
       </main>

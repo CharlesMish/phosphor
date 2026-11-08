@@ -274,7 +274,7 @@ export function parseSessionDocument(input: unknown): SessionDocument {
   exactKeys(loopIn, ["bars", "events"], "Note loop");
   const beats = integerIn(motionIn.beats, 1, 8, "Motion length") as MotionBeats;
   if (!MOTION_BEAT_LENGTHS.includes(beats)) fail("Motion length is unsupported.");
-  const bars = integerIn(loopIn.bars, 1, 8, "Note loop length") as LoopBars;
+  const bars = integerIn(loopIn.bars, 1, 16, "Note loop length") as LoopBars;
   if (!LOOP_BARS.includes(bars)) fail("Note loop length is unsupported.");
 
   const document: SessionDocument = {

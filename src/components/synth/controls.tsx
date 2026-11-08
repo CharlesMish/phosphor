@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import {
   Dices,
   FlipHorizontal2,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { Segmented } from "@/components/ui/segmented";
 import { SoundShelf } from "./sound-shelf";
 import { SessionMenu } from "./session-menu";
 import { TreatmentSelector } from "./treatment-selector";
@@ -46,7 +48,8 @@ import {
   type ChorusPreset,
   generateChorusPreset,
 } from "@/lib/synth/chorus";
-import { rangeLabel } from "@/lib/synth/keyboard-map";
+import { KEY_LAYOUTS, rangeLabel, type KeyLayoutId } from "@/lib/synth/keyboard-map";
+import { getKeyLayout, setKeyLayout, subscribeKeyLayout } from "@/lib/synth/key-layout-pref";
 import {
   MOTION_BEAT_LENGTHS,
   MOTION_BPM_MAX,
@@ -599,19 +602,24 @@ export function KeyboardControls() {
   const setOctave = useSynthStore((s) => s.setOctave);
   const volume = useSynthStore((s) => s.volume);
   const setParam = useSynthStore((s) => s.setParam);
+  const layout = useSyncExternalStore(subscribeKeyLayout, getKeyLayout);
 
   return (
     <div className="phosphor-keyboard-controls mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
-      <div className="flex items-center gap-1">
-        <Button variant="subtle" size="icon" className="size-9" aria-label="Octave down" onClick={() => setOctave(octave - 1)} disabled={octave <= -2}>
-          <Minus className="size-4" aria-hidden />
-        </Button>
-        <span className="min-w-20 text-center font-mono text-xs tabular-nums text-muted" aria-live="polite">{rangeLabel(octave)}</span>
-        <Button variant="subtle" size="icon" className="size-9" aria-label="Octave up" onClick={() => setOctave(octave + 1)} disabled={octave >= 3}>
-          <Plus className="size-4" aria-hidden />
-        </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1">
+          <Button variant="subtle" size="icon" className="size-9" aria-label="Octave down" title="Octave down (−)" onClick={() => setOctave(octave - 1)} disabled={octave <= -2}>
+            <Minus className="size-4" aria-hidden />
+          </Button>
+          <span className="min-w-20 text-center font-mono text-xs tabular-nums text-muted" aria-live="polite">{rangeLabel(octave, layout)}</span>
+          <Button variant="subtle" size="icon" className="size-9" aria-label="Octave up" title="Octave up (=)" onClick={() => setOctave(octave + 1)} disabled={octave >= 3}>
+            <Plus className="size-4" aria-hidden />
+          </Button>
+        </div>
+        <Segmented label="Computer keys" value={layout} onChange={setKeyLayout}
+          options={(Object.keys(KEY_LAYOUTS) as KeyLayoutId[]).map((id) => ({ value: id, label: KEY_LAYOUTS[id].name }))} />
       </div>
-      <p className="hidden font-mono text-xs text-muted md:block">Play the keys · Esc stops sound</p>
+      <p className="hidden font-mono text-xs text-muted lg:block">{KEY_LAYOUTS[layout].hint}</p>
       <label className="flex w-44 max-w-full items-center gap-2">
         <span className="font-mono text-xs text-muted">Volume</span>
         <Slider min={0} max={1} step={0.01} value={[volume]} onValueChange={(v) => setParam("volume", v[0] ?? volume)} aria-label="Master volume" aria-valuetext={`${Math.round(volume * 100)}%`} />

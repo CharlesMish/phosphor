@@ -677,6 +677,11 @@ export class SynthEngine {
     return !voice.releasing && (voice.offAt === undefined || voice.offAt > (this.ctx?.currentTime ?? 0));
   }
 
+  /** The transport that currently owns scheduled notes (-1 after a cancel). */
+  scheduledRunId(): number {
+    return this.scheduledRun;
+  }
+
   /** Separate ownership/run namespace: live key-ups can never release loop notes. */
   beginScheduledRun(run: number) {
     this.cancelScheduledNotes();
@@ -1190,6 +1195,18 @@ export class SynthEngine {
     this.wave = runtime.waveA;
   }
 
+  /**
+   * Offline renders set the pitch as a plain value, so each voice starts at
+   * phase 0 on its own start time. With an automation event, Chromium derives
+   * the start phase from where the note falls inside a 128-frame render block,
+   * so two identical passes of a loop would start their notes in different
+   * phases and a looped file would not join cleanly. Live playing is unchanged.
+   */
+  private setVoiceFrequency(osc: OscillatorNode, freq: number, now: number) {
+    if (this.offline) osc.frequency.value = freq;
+    else osc.frequency.setValueAtTime(freq, now);
+  }
+
   private createSingleSource(
     freq: number,
     env: GainNode,
@@ -1204,7 +1221,7 @@ export class SynthEngine {
 
     const osc = this.ctx.createOscillator();
     osc.setPeriodicWave(wave);
-    osc.frequency.setValueAtTime(freq, now);
+    this.setVoiceFrequency(osc, freq, now);
     osc.connect(mix);
     osc.start(now);
     return { kind: "single", oscillators: [osc], mix };
@@ -1235,8 +1252,8 @@ export class SynthEngine {
     const oscB = this.ctx.createOscillator();
     oscA.setPeriodicWave(runtime.waveA);
     oscB.setPeriodicWave(runtime.waveB);
-    oscA.frequency.setValueAtTime(freq, now);
-    oscB.frequency.setValueAtTime(freq, now);
+    this.setVoiceFrequency(oscA, freq, now);
+    this.setVoiceFrequency(oscB, freq, now);
     oscA.connect(gainA);
     oscB.connect(gainB);
     // Scheduling both starts at the same AudioContext time keeps their phases

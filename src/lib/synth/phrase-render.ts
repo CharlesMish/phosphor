@@ -1,6 +1,6 @@
 import { LOOP_LOOKAHEAD, loopDurationSeconds } from "./note-looper";
 import { SynthEngine } from "./engine";
-import { motionFrameAtTime } from "./motion";
+import { beatDurationSeconds, motionFrameAtTime } from "./motion";
 import { mapMotionRoute } from "./motion-routing";
 import { parseSessionDocument, type SessionDocument } from "./session-file";
 
@@ -118,6 +118,18 @@ export function scheduledNotes(session: SessionDocument): ScheduledNote[] {
   return notes;
 }
 
+/**
+ * Motion time for a render time, given where Motion's beat 1 falls. Before
+ * that point a looping Motion runs backwards through whole cycles (so a
+ * seamless loop's lead-in arrives in phase); one-shot Motion holds its start.
+ */
+export function motionElapsed(session: SessionDocument, renderTime: number, motionStart = 0): number {
+  const elapsed = renderTime - motionStart;
+  if (elapsed >= 0 || session.motion.mode === "one-shot") return Math.max(0, elapsed);
+  const period = beatDurationSeconds(session.motion.bpm) * session.motion.beats;
+  return ((elapsed % period) + period) % period;
+}
+
 /** Motion destinations at an elapsed render time. Disabled routes stay null. */
 export function motionDestinationsAt(session: SessionDocument, elapsed: number): MotionDestinations {
   const position = motionFrameAtTime(session.motion.path, elapsed, timingOf(session)).position;
@@ -161,8 +173,8 @@ export function controlTimes(duration: number, sampleRate: number, noteStarts: n
 }
 
 /** Install saved amounts before the graph exists so render frame 0 does not slew from class defaults. */
-function prime(engine: SynthEngine, session: SessionDocument): AppliedDestinations {
-  const start = motionDestinationsAt(session, 0);
+function prime(engine: SynthEngine, session: SessionDocument, motionStart = 0): AppliedDestinations {
+  const start = motionDestinationsAt(session, motionElapsed(session, 0, motionStart));
   engine.setParams({
     attack: session.envelope.attack,
     release: session.envelope.release,
@@ -204,6 +216,15 @@ function applyDestinations(
   applied: AppliedDestinations,
 ) {
   const next = motionDestinationsAt(session, elapsed);
+  applyMotion(engine, session, next, applied);
+}
+
+function applyMotion(
+  engine: SynthEngine,
+  session: SessionDocument,
+  next: MotionDestinations,
+  applied: AppliedDestinations,
+) {
   const { slotA, slotB } = session.cycle;
   if (next.morph !== null && next.morph !== applied.morph && slotA && slotB) {
     engine.setCycleMorph(slotA, slotB, next.morph);
@@ -240,15 +261,32 @@ export async function renderPhrase(
 ): Promise<PhraseRender> {
   session = parseSessionDocument(session);
   const sampleRate = options.sampleRate ?? PHRASE_SAMPLE_RATE;
+  const notes = scheduledNotes(session);
+  if (notes.length === 0) throw new PhraseRenderError("A completed note loop is required.");
+  return renderNotes(session, notes, phrasePlan(session, sampleRate), options);
+}
+
+/**
+ * Render explicit notes (in render seconds) through a fresh production engine
+ * for `plan.frames` frames. `motionStart` is the render time of Motion's
+ * beat 1; the phrase render uses 0. Notes may start at 0 but not before.
+ */
+export async function renderNotes(
+  session: SessionDocument,
+  notes: readonly ScheduledNote[],
+  plan: PhrasePlan,
+  options: PhraseRenderOptions = {},
+  motionStart = 0,
+): Promise<PhraseRender> {
+  session = parseSessionDocument(session);
+  const sampleRate = plan.sampleRate;
   if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 96000) {
     throw new PhraseRenderError("Unsupported sample rate.");
   }
-  const notes = scheduledNotes(session);
-  if (notes.length === 0) throw new PhraseRenderError("A completed note loop is required.");
+  if (notes.length === 0) throw new PhraseRenderError("There are no notes to render.");
   if (typeof OfflineAudioContext === "undefined") {
     throw new PhraseRenderError("Offline audio is unavailable.");
   }
-  const plan = phrasePlan(session, sampleRate);
   const renderSeconds = plan.frames / sampleRate;
   const ctx = new OfflineAudioContext(2, plan.frames, sampleRate);
   const engine = new SynthEngine();
@@ -264,7 +302,7 @@ export async function renderPhrase(
 
   try {
     if (options.signal?.aborted) throw new DOMException("The render was cancelled.", "AbortError");
-    const applied = prime(engine, session);
+    const applied = prime(engine, session, motionStart);
     engine.attachOfflineContext(ctx);
     finishGraph(engine, session, applied);
     engine.beginScheduledRun(1);
@@ -280,7 +318,7 @@ export async function renderPhrase(
           return;
         }
         const now = ctx.currentTime;
-        applyDestinations(engine, session, now, applied);
+        applyDestinations(engine, session, motionElapsed(session, now, motionStart), applied);
         scheduleDue(now);
         engine.refreshScheduledVoices();
         options.onProgress?.(Math.min(1, now / renderSeconds));

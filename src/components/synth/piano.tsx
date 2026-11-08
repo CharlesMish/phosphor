@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { performanceInput } from "@/lib/synth/looper-runtime";
 import { useSynthStore } from "@/lib/synth/store";
 import {
   BASE_MIDI,
-  OFFSET_TO_HINT,
-  VISIBLE_SEMITONES,
+  KEY_LAYOUTS,
   isBlackKey,
+  legends,
   midiName,
 } from "@/lib/synth/keyboard-map";
+import { getKeyLayout, subscribeKeyLayout } from "@/lib/synth/key-layout-pref";
 import { cn } from "@/lib/utils";
 
 function whitesInRange(start: number, end: number) {
@@ -38,8 +39,10 @@ function midiFromTarget(target: EventTarget | null): number | null {
 export function Piano() {
   const octave = useSynthStore((s) => s.octave);
   const active = useSynthStore((s) => s.activeNotes);
+  const layout = useSyncExternalStore(subscribeKeyLayout, getKeyLayout);
+  const hints = useMemo(() => legends(layout), [layout]);
   const start = BASE_MIDI + octave * 12;
-  const end = start + VISIBLE_SEMITONES;
+  const end = Math.min(127, start + KEY_LAYOUTS[layout].span);
   const whites = whitesInRange(start, end);
   const blacks: number[] = [];
   for (let m = start; m <= end; m++) {
@@ -163,7 +166,7 @@ export function Piano() {
         {whites.map((midi) => {
           const on = activeSet.has(midi);
           const offset = midi - start;
-          const hint = OFFSET_TO_HINT[offset];
+          const hint = hints.get(offset);
           const name = midiName(midi);
           const showName = name.startsWith("C") && !name.includes("#");
           return (
@@ -202,7 +205,7 @@ export function Piano() {
           const widthPct = (1 / whites.length) * 62;
           const on = activeSet.has(midi);
           const offset = midi - start;
-          const hint = OFFSET_TO_HINT[offset];
+          const hint = hints.get(offset);
           return (
             <button
               key={midi}

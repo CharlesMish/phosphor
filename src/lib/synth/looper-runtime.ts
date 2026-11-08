@@ -29,7 +29,14 @@ export function connectLooperTempo() {
     if (state.motionBpm !== previous.motionBpm) noteLooper.setBpm(state.motionBpm);
   });
 }
+const panicHandlers = new Set<() => void>();
+/** Other transports (the chord loop) stop with Esc, blur and hidden tabs too. */
+export function onPanic(fn: () => void) {
+  panicHandlers.add(fn);
+  return () => { panicHandlers.delete(fn); };
+}
 export function panicPerformance() {
+  panicHandlers.forEach((fn) => fn());
   noteLooper.stop();
   useSynthStore.getState().stopMotion();
   synth.allNotesOff();

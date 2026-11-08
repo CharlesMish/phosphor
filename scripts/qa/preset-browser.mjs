@@ -24,9 +24,9 @@ try {
  writeFileSync(`${out}/preset-render.json`,JSON.stringify(report,null,2));
  check('preset render browser suite',await page.title()==='PRESET_OK',report.error);
  await page.goto(base);await page.getByRole('button',{name:'Sounds',exact:true}).click();
- check('four starter sounds',await page.locator('[aria-label="Preset list"] li').count()===4);
+ check('nine built-in favourites',await page.locator('[aria-label="Preset list"] li').count()===9);
  await page.getByLabel('Search sounds').fill('warm keys');check('character search',await page.locator('[aria-label="Preset list"] li').count()===1);
- await page.getByRole('button',{name:'Load Clear chord keys'}).click();
+ await page.getByRole('button',{name:'Load Drawbar Organ'}).click();
  await page.getByRole('status').filter({hasText:'loaded. Take'}).waitFor();
  await page.getByLabel('Search sounds').fill('');
  // Populate a take through the same production state API, then exercise UI load.
@@ -35,7 +35,7 @@ try {
   const s=captureSession();s.motion.bpm=91;s.output.volume=.4;s.output.octave=-1;s.domain='drive';
   s.noteLoop={bars:2,events:[{id:7,type:'on',midi:36,beat:1},{id:7,type:'off',midi:36,beat:2}]};applySession(s);
  });
- await page.getByRole('button',{name:'Load Slow window'}).click();await page.getByRole('status').filter({hasText:'loaded. Take'}).waitFor();
+ await page.getByRole('button',{name:'Load String Machine'}).click();await page.getByRole('status').filter({hasText:'loaded. Take'}).waitFor();
  const preserved=await page.evaluate(async()=>{
   const {captureSession}=await import('/phosphor/src/lib/synth/session-apply.ts');
   const {noteLooper}=await import('/phosphor/src/lib/synth/looper-runtime.ts');
@@ -43,9 +43,9 @@ try {
   const s=captureSession();return {tempo:s.motion.bpm,volume:s.output.volume,octave:s.output.octave,domain:s.domain,notes:s.noteLoop.events.length,bars:s.noteLoop.bars,motion:useSynthStore.getState().motionPlaying,transport:noteLooper.getSnapshot().state};
  });
  check('UI load preserves workspace and leaves playback stopped',JSON.stringify(preserved)===JSON.stringify({tempo:91,volume:.4,octave:-1,domain:'drive',notes:2,bars:2,motion:false,transport:'stopped'}),preserved);
- await page.getByRole('button',{name:'Favorite Slow window'}).click();await page.getByLabel('Favorites',{exact:true}).check();check('favorites filter',await page.locator('[aria-label="Preset list"] li').count()===1);await page.getByLabel('Favorites',{exact:true}).uncheck();
+ await page.getByRole('button',{name:'Favorite String Machine'}).click();await page.getByLabel('Favorites',{exact:true}).check();check('favorites filter',await page.locator('[aria-label="Preset list"] li').count()===1);await page.getByLabel('Favorites',{exact:true}).uncheck();
  await page.getByLabel('Blind labels',{exact:true}).check();
- const blindText=await page.locator('#sound-shelf').innerText();check('blind UI hides creator and evocative names',!blindText.includes('Astra')&&!blindText.includes('Slow window')&&/P-[0-9A-F]{8}/.test(blindText));
+ const blindText=await page.locator('#sound-shelf').innerText();check('blind UI hides creator and evocative names',!blindText.includes('Astra')&&!blindText.includes('Claude')&&!blindText.includes('String Machine')&&/P-[0-9A-F]{8}/.test(blindText));
  await page.screenshot({path:`${out}/library-desktop.png`});
  await page.getByLabel('Blind labels',{exact:true}).uncheck();
  await page.getByLabel('Sound name',{exact:true}).fill('Owner copy');await page.getByRole('button',{name:'Save as new',exact:true}).click();
@@ -53,7 +53,7 @@ try {
  await page.getByLabel('Sound name',{exact:true}).fill('Renamed copy');await page.getByRole('button',{name:'Rename copy',exact:true}).click();
  check('rename copy visible',await page.getByRole('button',{name:'Load Renamed copy'}).count()===1);
  await page.getByRole('button',{name:'Duplicate',exact:true}).click();await page.getByRole('status').filter({hasText:'loaded. Take'}).waitFor();
- check('duplicate receives a new record',await page.locator('[aria-label="Preset list"] li').count()===6);
+ check('duplicate receives a new record',await page.locator('[aria-label="Preset list"] li').count()===11);
  // Export / import uses the real file picker. An invalid import must leave state intact.
  const before=await page.evaluate(()=>localStorage.getItem('phosphor.sounds.v2'));
  await page.getByLabel('Import preset file').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{"format":"phosphor-preset-pack","version":999}')});
@@ -65,9 +65,9 @@ try {
  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Export Motion WAV',exact:true}).click();const dl=await download;await dl.saveAs(`${out}/ui-export.wav`);
  check('UI demo preserves recorded events',await page.evaluate(async()=>{const {noteLooper}=await import('/phosphor/src/lib/synth/looper-runtime.ts');return noteLooper.getEvents().length===2;}));
  await page.waitForTimeout(600);await page.reload();await page.getByRole('button',{name:'Sounds',exact:true}).click();
- check('reload retains library and favorite',await page.locator('[aria-label="Preset list"] li').count()===6);
+ check('reload retains library and favorite',await page.locator('[aria-label="Preset list"] li').count()===11);
  const restored=await page.evaluate(async()=>{const {captureSession}=await import('/phosphor/src/lib/synth/session-apply.ts');return captureSession();});
- check('reload restores patch trim and take stopped',restored.output.trimDb===-4&&restored.output.volume===.4&&restored.noteLoop.events.length===2);
+ check('reload restores patch trim and take stopped',restored.output.trimDb===-7.2&&restored.output.volume===.4&&restored.noteLoop.events.length===2);
  // Physical owner reset, real engine notes, and an output probe during rapid switches.
  await page.getByRole('button',{name:'Close',exact:true}).click();
  const switching=await page.evaluate(async()=>{
@@ -90,10 +90,10 @@ try {
  for(let n=0;n<80;n++){try{if((await fetch('http://127.0.0.1:8094/phosphor/')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  const production=await context.newPage();production.on('pageerror',e=>errors.push(e.message));
  await production.goto('http://127.0.0.1:8094/phosphor/');await production.getByRole('button',{name:'Sounds',exact:true}).click();
- await production.getByRole('button',{name:'Load Rounded foundation'}).click();await production.getByRole('status').filter({hasText:'loaded. Take'}).waitFor();
+ await production.getByRole('button',{name:'Load Chip Pulse'}).click();await production.getByRole('status').filter({hasText:'loaded. Take'}).waitFor();
  await production.getByRole('button',{name:'Static demo',exact:true}).click();await production.getByRole('status').filter({hasText:'Playing static'}).waitFor({timeout:60000});
  await production.keyboard.press('Escape');
- check('production bundle loads and auditions the bass',await production.getByRole('status').filter({hasText:'Playing static'}).count()===0 || await production.locator('#sound-shelf').count()===0);
+ check('production bundle loads and auditions a built-in',await production.getByRole('status').filter({hasText:'Playing static'}).count()===0 || await production.locator('#sound-shelf').count()===0);
  check('no browser exceptions' ,errors.length===0,errors);
  writeFileSync(`${out}/ui-checks.json`,JSON.stringify({checks,errors},null,2));
  console.log(JSON.stringify({ok:true,checks:checks.length,out,browser:browser.version()},null,2));

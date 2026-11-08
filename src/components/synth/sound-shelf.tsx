@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
-import starterData from "../../presets/starter.pack.json" with { type: "json" };
+import { RETIRED_FACTORY_IDS, factoryEntries } from "@/presets/factory";
 import { SoundLibrary, browserStorage, createSoundId, legacyEntry } from "@/lib/synth/sound-library";
 import { applySound, captureSound } from "@/lib/synth/sound-session";
 import { MAX_PACK_BYTES, parseJsonFile, parseSound, soundFromSession } from "@/lib/synth/sound-file";
@@ -14,7 +14,7 @@ import { useSynthStore } from "@/lib/synth/store";
 import { synth } from "@/lib/synth/engine";
 import { noteLooper } from "@/lib/synth/looper-runtime";
 
-const library = new SoundLibrary(browserStorage(), parsePack(starterData).entries);
+const library = new SoundLibrary(browserStorage(), factoryEntries(), RETIRED_FACTORY_IDS);
 const field = "rounded-md bg-surface-2 px-2 py-1.5 text-sm text-fg shadow-border min-w-0";
 export function downloadFile(file: File) {
   const url = URL.createObjectURL(file); const link = document.createElement("a");
@@ -109,7 +109,7 @@ export function SoundShelf() {
   };
   return <div ref={root} className="relative" onPointerDown={e => e.stopPropagation()}>
     <Button variant="subtle" aria-label="Sounds" aria-expanded={open} aria-controls="sound-shelf" onClick={() => setOpen(!open)}>Sounds</Button>
-    {open && <div id="sound-shelf" role="dialog" aria-label="Sound library" className="fixed inset-x-3 top-16 z-30 grid max-h-[calc(100dvh-5rem)] gap-3 overflow-y-auto rounded-lg bg-surface p-4 shadow-border sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[36rem] sm:max-h-[75dvh]">
+    {open && <div id="sound-shelf" role="dialog" aria-label="Sound library" className="fixed inset-x-3 top-16 z-30 grid grid-cols-[minmax(0,1fr)] max-h-[calc(100dvh-5rem)] gap-3 overflow-y-auto rounded-lg bg-surface p-4 shadow-border sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[36rem] sm:max-h-[75dvh]">
       <div className="flex items-center justify-between"><strong>Sound library</strong><Button variant="subtle" onClick={() => setOpen(false)}>Close</Button></div>
       <div className="flex flex-wrap gap-2">
         <input className={`${field} flex-1`} aria-label="Search sounds" placeholder="warm keys, dark moving pad…" value={query} onChange={e => setQuery(e.target.value)} />
@@ -122,7 +122,7 @@ export function SoundShelf() {
       <ul className="grid max-h-44 gap-1 overflow-y-auto" aria-label="Preset list">
         {visible.map(({ entry }) => <li key={entry.id} className={`flex items-center gap-2 rounded-md p-2 ${entry.id === selected ? "bg-active-soft" : "bg-surface-2"}`}>
           <button aria-label={`Favorite ${label(entry)}`} aria-pressed={favorites.includes(entry.id)} onClick={() => void perform(() => library.favorite(entry.id))}>{favorites.includes(entry.id) ? "★" : "☆"}</button>
-          <button className="min-w-0 flex-1 text-left" aria-label={`Load ${label(entry)}`} disabled={busy} onClick={() => void perform(() => load(entry))}><span className="block truncate">{label(entry)}</span><small className="text-muted">{entry.metadata.roles.join(" · ")} · {entry.metadata.character.brightness} · {entry.metadata.character.body}</small></button>
+          <button className="min-w-0 flex-1 text-left" aria-label={`Load ${label(entry)}`} disabled={busy} onClick={() => void perform(() => load(entry))}><span className="block truncate">{label(entry)}</span><small className="block text-muted [overflow-wrap:anywhere]">{entry.metadata.roles.join(" · ")} · {entry.metadata.character.brightness} · {entry.metadata.character.body}</small></button>
         </li>)}
       </ul>
       {!visible.length && <p className="text-sm text-muted">No matching sounds.</p>}
@@ -148,7 +148,7 @@ export function SoundShelf() {
           <label className="grid gap-1">Playing<select className={field} value={draft.playing} onChange={e => setDraft({ ...draft, playing: e.target.value as PresetMetadata["playing"] })}>{["sustained", "short-note", "both"].map(v => <option key={v}>{v}</option>)}</select></label>
           {[0,1].map(i => <label key={i}>MIDI {i ? "high" : "low"}<input className={field} type="number" min={0} max={127} value={draft.range[i]} onChange={e => { const range: [number,number] = [...draft.range]; range[i] = +e.target.value; setDraft({ ...draft, range }); }} /></label>)}
           <label className="grid gap-1">Suggested BPM<input className={field} type="number" min={40} max={240} value={draft.recommendedBpm ?? ""} onChange={e => setDraft({ ...draft, recommendedBpm: e.target.value ? +e.target.value : null })} /></label>
-          <label className="grid gap-1">Authored trim (dB)<input aria-label="Authored trim" className={field} type="number" min={-48} max={0} step={1} value={state.trimDb} onChange={e => state.setParam("trimDb", Math.max(-48, Math.min(0, +e.target.value)))} /></label>
+          <label className="grid gap-1">Authored trim (dB)<input aria-label="Authored trim" className={field} type="number" min={-48} max={0} step={0.1} value={state.trimDb} onChange={e => state.setParam("trimDb", Math.max(-48, Math.min(0, +e.target.value)))} /></label>
           <label className="col-span-2 grid gap-1">Try this<input className={field} value={draft.tryThis} onChange={e => setDraft({ ...draft, tryThis: e.target.value })} /></label>
           <label className="col-span-2 grid gap-1">Release behavior<input className={field} value={draft.release} onChange={e => setDraft({ ...draft, release: e.target.value })} /></label>
         </div></details>
@@ -158,7 +158,7 @@ export function SoundShelf() {
         <Button variant="subtle" disabled={!current} onClick={() => void perform(() => jsonFile(library.exportEntry(selected!), `${auditionId(selected!)}.pack.json`))}>Export saved preset</Button>
         <Button variant="subtle" onClick={() => jsonFile(captureSound(), "current.sound.json")}>Export current sound</Button>
         <Button variant="subtle" onClick={() => file.current?.click()}>Import</Button>
-        {!blind && <Button variant="subtle" disabled={!current || current.entry.id.startsWith("foundation:")} onClick={() => void perform(() => { if (window.confirm("Remove this saved sound? Export it first if you need a backup.")) { library.remove(selected!); setSelected(null); } })}>Remove saved</Button>}
+        {!blind && <Button variant="subtle" disabled={!current || library.isFactory(current.entry.id)} onClick={() => void perform(() => { if (window.confirm("Remove this saved sound? Export it first if you need a backup.")) { library.remove(selected!); setSelected(null); } })}>Remove saved</Button>}
       </div>
       <input ref={file} type="file" className="hidden" accept=".json,application/json" aria-label="Import preset file" onChange={e => { void importFile(e.target.files?.[0]); e.target.value = ""; }} />
       <p role="status" aria-live="polite" className="text-sm text-muted">{message || (library.available ? "Sounds are kept in this browser. Export packs for backup." : "Storage unavailable. Export to retain sounds after this visit.")}</p>

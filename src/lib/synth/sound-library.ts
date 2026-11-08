@@ -45,9 +45,11 @@ export class SoundLibrary {
   private listeners = new Set<() => void>();
   private store: KeyValueStore | null;
   private factory: PresetEntry[];
+  private retired: Set<string>;
   private blockedReason = "";
-  constructor(store: KeyValueStore | null, factory: PresetEntry[]) {
-    this.store = store; this.factory = factory;
+  /** `retired` lists former built-in IDs: saved stars on them are dropped, not treated as corruption. */
+  constructor(store: KeyValueStore | null, factory: PresetEntry[], retired: readonly string[] = []) {
+    this.store = store; this.factory = factory; this.retired = new Set(retired);
     try {
       if (store && !store.getItem(SOUND_LIBRARY_KEY)) {
         const raw = store.getItem(LEGACY_LIBRARY_KEY);
@@ -91,8 +93,9 @@ export class SoundLibrary {
       ids.add(entry.id); blind.add(auditionId(entry.id));
       return { entry, editable: row.editable };
     });
-    if (!data.favorites.every(id => typeof id === "string" && ids.has(id))) throw new Error("Unknown favorite ID.");
-    return { entries, favorites: [...new Set(data.favorites)] };
+    const favorites = data.favorites.filter(id => !(typeof id === "string" && this.retired.has(id) && !ids.has(id)));
+    if (!favorites.every(id => typeof id === "string" && ids.has(id))) throw new Error("Unknown favorite ID.");
+    return { entries, favorites: [...new Set(favorites as string[])] };
   }
   private write(next: Shelf) {
     if (this.blockedReason) throw new Error(this.blockedReason);
@@ -113,6 +116,7 @@ export class SoundLibrary {
     catch { return this.factory.map(entry => ({ entry: structuredClone(entry), editable: false })); }
   }
   favorites(): string[] { try { return this.read().favorites; } catch { return []; } }
+  isFactory(id: string): boolean { return this.factory.some(entry => entry.id === id); }
   favorite(id: string) {
     const next = this.read();
     if (!this.list().some(r => r.entry.id === id)) throw new Error("Unknown sound.");
